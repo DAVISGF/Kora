@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Download, Gauge, Pause, Play, Plus, Scissors, Share2, SkipBack, SkipForward } from 'lucide-react'
+import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward } from 'lucide-react'
 import { Biomech, Compare, Heatmap, KpiGrid, PerfBars } from '../components/Charts'
 import { DiagSummary } from '../components/Diag'
 import type { LayerState } from '../components/Scene'
@@ -10,6 +10,8 @@ import { EVENT_COLOR, trendColor, type SportData } from '../data/sports'
 import { analysisReportMd, eventsCsv } from '../lib/report'
 import { useStore, type Clip } from '../lib/store'
 import { usePlayback } from '../lib/usePlayback'
+import { useVision, type VisionStatus } from '../lib/useVision'
+import { jointAngles, mainPerson, type FrameAnalysis } from '../lib/vision'
 import { comma, copyText, cx, downloadText, fmtShort, fmtTime, slug } from '../lib/util'
 
 const LAYERS: { id: keyof LayerState; label: string; color: string }[] = [
@@ -36,8 +38,8 @@ function AnalysisView() {
   const { data, sport, video, cams, setCams, addClip } = useStore()
   const [params] = useSearchParams()
   const startSecs = Number(params.get('t'))
-  const [videoSecs, setVideoSecs] = useState<number | null>(null)
-  const secs = videoSecs ?? data.secs
+  const [meta, setMeta] = useState<{ secs: number; width: number; height: number } | null>(null)
+  const secs = meta?.secs || data.secs
   const events = data.events
 
   const pb = usePlayback(startSecs > 0 ? Math.min(100, (startSecs / data.secs) * 100) : events[2].pct)
@@ -57,8 +59,11 @@ function AnalysisView() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    if (!video?.playable) setVideoSecs(null)
+    if (!video?.playable) setMeta(null)
   }, [video])
+
+  const hasVideo = !!video?.playable
+  const vision = useVision(pb.videoRef, hasVideo, pos)
 
   const evIdx = useMemo(() => {
     let idx = -1
@@ -155,7 +160,10 @@ function AnalysisView() {
               timecode={time(pos)}
               video={video}
               videoRef={pb.videoRef}
-              onDuration={setVideoSecs}
+              onMeta={setMeta}
+              real={vision.analysis}
+              videoSize={meta}
+              visionStatus={visionLabel(vision.status, vision.analysis)}
             />
 
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
@@ -209,6 +217,31 @@ function AnalysisView() {
               })}
             </div>
 
+            {hasVideo && (
+              <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+                <span className="mr-1 text-[13px] text-mute">IA real</span>
+                <button type="button" onClick={() => void vision.analyze()} disabled={vision.status === 'loading'} className={cx(pill, 'border-lime text-lime')}>
+                  <ScanSearch size={16} aria-hidden="true" />
+                  {vision.status === 'loading' ? 'Analizando…' : 'Analizar fotograma'}
+                </button>
+                <button type="button" aria-pressed={vision.live} onClick={() => vision.setLive(!vision.live)} className={cx(pill, vision.live ? 'border-ink' : 'border-line')}>
+                  Análisis continuo
+                </button>
+                <button type="button" aria-pressed={vision.ball} onClick={() => vision.setBall(!vision.ball)} className={cx(pill, vision.ball ? 'border-ink' : 'border-line')}>
+                  Detectar balón
+                </button>
+                <span className="min-w-0 flex-[1_1_220px] text-right text-xs text-mute">
+                  {vision.live ? 'Envía un fotograma cada 0,8 s al servicio de visión.' : 'Cada análisis envía el fotograma actual al servicio de visión.'}
+                </span>
+                {vision.message && (
+                  <p role="alert" className="m-0 w-full text-[13px] text-danger">
+                    {vision.message}
+                    {vision.status === 'not_configured' && ' Añádela en el proyecto de Vercel y vuelve a desplegar.'}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
               <button type="button" aria-label="Evento anterior" onClick={() => jump(evIdx - 1)} className={square}>
                 <SkipBack size={18} aria-hidden="true" />
@@ -253,7 +286,13 @@ function AnalysisView() {
                 <span className="text-mute"> / {time(100)}</span>
               </div>
               <div className="min-w-0 flex-[1_1_200px] text-right text-[13px] text-mute">
-                Evento: <span className="font-semibold text-ink">{current ? `${current.type} · ${current.desc}` : 'Sin evento'}</span>
+                {hasVideo ? (
+                  'Los eventos, KPIs y diagnósticos son de ejemplo: no salen de este video.'
+                ) : (
+                  <>
+                    Evento: <span className="font-semibold text-ink">{current ? `${current.type} · ${current.desc}` : 'Sin evento'}</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -365,7 +404,12 @@ function AnalysisView() {
               <Compare data={data} />
             </>
           )}
-          {tab === 'bio' && <Biomech data={data} />}
+          {tab === 'bio' && (
+            <>
+              {hasVideo && <RealPose analysis={vision.analysis} aspect={meta ? meta.width / meta.height : 16 / 9} />}
+              <Biomech data={data} />
+            </>
+          )}
           {tab === 'coach' && (
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between gap-2">
@@ -390,6 +434,38 @@ function AnalysisView() {
         </aside>
       </div>
     </div>
+  )
+}
+
+function visionLabel(status: VisionStatus, analysis: FrameAnalysis | null): string {
+  if (status === 'loading') return 'ANALIZANDO…'
+  if (status === 'ok' && analysis) return `IA REAL · ${analysis.persons.length} personas · ${analysis.ms} ms`
+  if (status === 'not_configured') return 'IA SIN CONFIGURAR'
+  if (status === 'unauthorized') return 'CLAVE RECHAZADA'
+  if (status === 'failed') return 'ERROR DE VISIÓN'
+  return 'IA REAL · SIN ANALIZAR'
+}
+
+/** Ángulos medidos de verdad sobre el fotograma analizado. */
+function RealPose({ analysis, aspect }: { analysis: FrameAnalysis | null; aspect: number }) {
+  const person = analysis ? mainPerson(analysis.persons) : null
+  const angles = person ? jointAngles(person, aspect) : []
+  return (
+    <section className={`${card} flex flex-col gap-3 border-lime p-4`}>
+      <div className="flex flex-col gap-0.5">
+        <h2 className="m-0 text-[15px] font-semibold">Medición real del fotograma</h2>
+        <span className="text-xs text-mute">
+          {person ? `Persona #${person.id}, la de mayor tamaño · ángulos en el plano de la imagen` : 'Pulsa Analizar fotograma para medir la pose.'}
+        </span>
+      </div>
+      {person && angles.length === 0 && <span className="text-[13px] text-mute">No hay articulaciones con confianza suficiente en este fotograma.</span>}
+      {angles.map((a) => (
+        <div key={a.label} className="flex items-baseline justify-between gap-2 border-t border-line pt-2">
+          <span className="text-[13px]">{a.label}</span>
+          <span className="font-mono text-base font-bold">{a.degrees}°</span>
+        </div>
+      ))}
+    </section>
   )
 }
 

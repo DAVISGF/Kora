@@ -180,7 +180,7 @@ export default function Ingest() {
               <button type="button" className={btnPrimary} onClick={() => fileRef.current?.click()}>
                 {file ? 'Cambiar archivo' : 'Seleccionar archivo'}
               </button>
-              <div className="text-xs text-mute">El video se reproduce en tu navegador; no se sube a ningún servidor.</div>
+              <div className="text-xs text-mute">El video se queda en tu navegador. Al analizar con IA solo se envían fotogramas sueltos al servicio de visión.</div>
             </div>
           ) : (
             <div className="flex flex-col gap-3">

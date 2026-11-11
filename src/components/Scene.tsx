@@ -15,8 +15,6 @@ interface SceneProps {
   offsets: string[]
   /** Etiqueta de cada caja de tracking */
   labels: string[]
-  /** Con video real solo se dibujan las capas, no el fotograma ilustrado */
-  overlayOnly?: boolean
 }
 
 const MONO = 'JetBrains Mono, monospace'
@@ -219,7 +217,7 @@ function Vectors({ sport }: { sport: SportId }) {
 }
 
 /** Fotograma ilustrado con las capas de visión por computadora simuladas. */
-export default function Scene({ sport, accent, layers, offsets, labels, overlayOnly }: SceneProps) {
+export default function Scene({ sport, accent, layers, offsets, labels }: SceneProps) {
   const players = PLAYERS[sport]
   const figure = `figure-${sport}`
   const describe =
@@ -237,8 +235,7 @@ export default function Scene({ sport, accent, layers, offsets, labels, overlayO
         </g>
       </defs>
 
-      {!overlayOnly && (
-        <>
+      <>
           {sport === 'basket' ? <BasketBase /> : <FootballBase />}
           {players.map((p, i) => (
             <g key={i} transform={`translate(${offsets[i]})`}>
@@ -246,8 +243,7 @@ export default function Scene({ sport, accent, layers, offsets, labels, overlayO
             </g>
           ))}
           {sport === 'basket' ? <circle cx="562" cy="298" r="9" fill="#FE7902" /> : <circle cx="494" cy="406" r="6" fill="#fff" />}
-        </>
-      )}
+      </>
 
       {layers.zone && <Zones sport={sport} />}
 
