@@ -275,8 +275,23 @@ function AnalysisView() {
                 <button type="button" aria-pressed={vision.ball} onClick={() => vision.setBall(!vision.ball)} className={cx(pill, vision.ball ? 'border-ink' : 'border-line')}>
                   Detectar balón
                 </button>
+                {vision.live && (
+                  <Segmented
+                    label="Motor del análisis continuo"
+                    value={vision.engine}
+                    onChange={vision.setEngine}
+                    options={[
+                      { id: 'local', label: 'En el navegador' },
+                      { id: 'cloud', label: 'Roboflow' },
+                    ]}
+                  />
+                )}
                 <span className="min-w-0 flex-[1_1_220px] text-right text-xs text-mute">
-                  {vision.live ? 'Envía un fotograma cada 0,8 s al servicio de visión.' : 'Cada análisis envía el fotograma actual al servicio de visión.'}
+                  {!vision.live
+                    ? 'Cada análisis envía el fotograma actual al servicio de visión.'
+                    : vision.engine === 'local'
+                      ? 'Corre en tu equipo: no envía fotogramas ni gasta créditos. Hasta 6 personas, sin balón.'
+                      : 'Envía un fotograma cada 0,8 s al servicio de visión.'}
                 </span>
                 {scanError && (
                   <p role="alert" className="m-0 w-full text-[13px] text-danger">
@@ -531,7 +546,8 @@ function AnalysisView() {
 
 function visionLabel(status: VisionStatus, analysis: FrameAnalysis | null): string {
   if (status === 'loading') return 'ANALIZANDO…'
-  if (status === 'ok' && analysis) return `IA REAL · ${analysis.persons.length} personas · ${analysis.ms} ms`
+  if (status === 'loading_model') return 'CARGANDO MODELO…'
+  if (status === 'ok' && analysis) return `${analysis.source === 'local' ? 'IA LOCAL' : 'IA REAL'} · ${analysis.persons.length} personas · ${analysis.ms} ms`
   if (status === 'not_configured') return 'IA SIN CONFIGURAR'
   if (status === 'unauthorized') return 'CLAVE RECHAZADA'
   if (status === 'failed') return 'ERROR DE VISIÓN'

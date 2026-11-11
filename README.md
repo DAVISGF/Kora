@@ -39,6 +39,13 @@ y consulta a Roboflow. Configura la variable de entorno en el servidor:
 En local, copia `.env.example` a `.env`; `npm run dev` sirve `/api/vision` con el mismo código.
 Cada análisis consume inferencias de tu cuenta de Roboflow: una por fotograma, dos si se detecta el balón.
 
+### Modo continuo en el navegador
+
+El análisis continuo usa por defecto MediaPipe Pose dentro del navegador: no envía fotogramas ni gasta créditos.
+Detecta hasta 6 personas y no localiza el balón; se puede cambiar a Roboflow desde el propio visor.
+El runtime WASM se copia de `node_modules` a `public/mediapipe` al ejecutar `npm run dev` o `npm run build`,
+y el modelo (unos 6 MB) se descarga de Google la primera vez que se activa.
+
 ## Qué es real y qué está simulado
 
 Real, con la clave configurada:

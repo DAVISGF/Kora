@@ -29,6 +29,8 @@ export interface FrameAnalysis {
   /** Tiempo de respuesta del servicio, en ms */
   ms: number
   model: string
+  /** 'local' si lo calculó el modelo del navegador */
+  source?: 'local' | 'cloud'
 }
 
 export type VisionErrorCode = 'not_configured' | 'unauthorized' | 'failed'
