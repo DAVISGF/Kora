@@ -39,12 +39,19 @@ y consulta a Roboflow. Configura la variable de entorno en el servidor:
 En local, copia `.env.example` a `.env`; `npm run dev` sirve `/api/vision` con el mismo código.
 Cada análisis consume inferencias de tu cuenta de Roboflow: una por fotograma, dos si se detecta el balón.
 
-### Modo continuo en el navegador
+### Modo continuo: tres métodos
 
-El análisis continuo usa por defecto MediaPipe Pose dentro del navegador: no envía fotogramas ni gasta créditos.
-Detecta hasta 6 personas y no localiza el balón; se puede cambiar a Roboflow desde el propio visor.
-El runtime WASM se copia de `node_modules` a `public/mediapipe` al ejecutar `npm run dev` o `npm run build`,
-y el modelo (unos 6 MB) se descarga de Google la primera vez que se activa.
+El análisis continuo se puede hacer de tres formas, que el usuario elige en el visor (la elección se recuerda):
+
+| Método | Qué da | Dónde corre |
+|---|---|---|
+| Navegador · pose | Esqueleto y ángulos de hasta 6 personas cercanas | En el equipo del usuario |
+| Navegador · equipo | Cajas de hasta 30 personas y el balón, con esqueleto en las más visibles | En el equipo del usuario |
+| Roboflow | Lo mismo que el análisis por fotograma, cada 0,8 s | En el servicio de visión (consume créditos) |
+
+Los dos métodos locales usan MediaPipe dentro de un Web Worker (`src/lib/vision.worker.ts`), así que la interfaz
+no se frena mientras detectan. El runtime WASM se copia de `node_modules` a `public/mediapipe` al ejecutar
+`npm run dev` o `npm run build`, y los modelos (6 a 7 MB cada uno) se descargan de Google al usarlos por primera vez.
 
 ## Qué es real y qué está simulado
 

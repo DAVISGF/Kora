@@ -275,24 +275,20 @@ function AnalysisView() {
                 <button type="button" aria-pressed={vision.ball} onClick={() => vision.setBall(!vision.ball)} className={cx(pill, vision.ball ? 'border-ink' : 'border-line')}>
                   Detectar balón
                 </button>
-                {vision.live && (
+                <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+                  <span className="text-[13px] text-mute">Método del análisis continuo</span>
                   <Segmented
-                    label="Motor del análisis continuo"
+                    label="Método del análisis continuo"
                     value={vision.engine}
                     onChange={vision.setEngine}
                     options={[
-                      { id: 'local', label: 'En el navegador' },
+                      { id: 'pose', label: 'Navegador · pose' },
+                      { id: 'team', label: 'Navegador · equipo' },
                       { id: 'cloud', label: 'Roboflow' },
                     ]}
                   />
-                )}
-                <span className="min-w-0 flex-[1_1_220px] text-right text-xs text-mute">
-                  {!vision.live
-                    ? 'Cada análisis envía el fotograma actual al servicio de visión.'
-                    : vision.engine === 'local'
-                      ? 'Corre en tu equipo: no envía fotogramas ni gasta créditos. Hasta 6 personas, sin balón.'
-                      : 'Envía un fotograma cada 0,8 s al servicio de visión.'}
-                </span>
+                  <span className="min-w-0 flex-[1_1_260px] text-xs text-mute">{ENGINE_HELP[vision.engine]}</span>
+                </div>
                 {scanError && (
                   <p role="alert" className="m-0 w-full text-[13px] text-danger">
                     {scanError}
@@ -543,6 +539,12 @@ function AnalysisView() {
     </div>
   )
 }
+
+const ENGINE_HELP = {
+  pose: 'Esqueleto y ángulos de hasta 6 personas cercanas. Corre en tu equipo, sin enviar fotogramas ni gastar créditos.',
+  team: 'Cajas de hasta 30 personas y el balón, con esqueleto en las más visibles. Corre en tu equipo; algo más lento que el de pose.',
+  cloud: 'Envía un fotograma cada 0,8 s al servicio de visión. El más preciso, pero consume créditos.',
+} as const
 
 function visionLabel(status: VisionStatus, analysis: FrameAnalysis | null): string {
   if (status === 'loading') return 'ANALIZANDO…'

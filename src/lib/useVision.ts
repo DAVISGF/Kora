@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import { loadLocalPose } from './localPose'
+import { detectLocal, type LocalEngine } from './localVision'
 import { analyzeFrame, trackPersons, VisionError, type FrameAnalysis, type Person, type VisionErrorCode } from './vision'
 
 export type VisionStatus = 'idle' | 'loading' | 'loading_model' | 'ok' | VisionErrorCode
-export type LiveEngine = 'local' | 'cloud'
+export type LiveEngine = LocalEngine | 'cloud'
+
+const ENGINE_KEY = 'kora.liveEngine'
+const isEngine = (v: unknown): v is LiveEngine => v === 'pose' || v === 'team' || v === 'cloud'
+
+function storedEngine(): LiveEngine {
+  try {
+    const v = localStorage.getItem(ENGINE_KEY)
+    return isEngine(v) ? v : 'pose'
+  } catch {
+    return 'pose'
+  }
+}
 
 const LIVE_INTERVAL_MS = 800
-const LOCAL_MIN_INTERVAL_MS = 80 // ~12 detecciones por segundo como máximo
+const LOCAL_MIN_INTERVAL_MS = 50 // hasta ~20 detecciones por segundo
 
 /** Análisis real de fotogramas del video cargado, bajo demanda o en continuo. */
 export function useVision(videoRef: RefObject<HTMLVideoElement | null>, enabled: boolean, pos: number) {
@@ -15,7 +27,15 @@ export function useVision(videoRef: RefObject<HTMLVideoElement | null>, enabled:
   const [message, setMessage] = useState('')
   const [live, setLive] = useState(false)
   const [ball, setBall] = useState(false)
-  const [engine, setEngine] = useState<LiveEngine>('local')
+  const [engine, setEngineState] = useState<LiveEngine>(storedEngine)
+  const setEngine = useCallback((e: LiveEngine) => {
+    setEngineState(e)
+    try {
+      localStorage.setItem(ENGINE_KEY, e)
+    } catch {
+      /* sin almacenamiento: la elección dura lo que la sesión */
+    }
+  }, [])
   const busy = useRef(false)
   const prev = useRef<Person[]>([])
   const nextId = useRef(1)
@@ -44,54 +64,50 @@ export function useVision(videoRef: RefObject<HTMLVideoElement | null>, enabled:
     }
   }, [videoRef])
 
-  // Modo continuo en el navegador: sin red, tantas detecciones por segundo como dé el equipo.
+  // Modo continuo en el navegador: el modelo corre en un worker, sin red.
   useEffect(() => {
-    if (!live || !enabled || engine !== 'local') return
+    if (!live || !enabled || engine === 'cloud') return
     let stopped = false
-    let raf = 0
-    let last = 0
     let lastTime = -1
-    let cost = 0
+    let lastRun = 0
     setStatus((s) => (s === 'ok' ? s : 'loading_model'))
-    loadLocalPose()
-      .then((pose) => {
-        if (stopped) return
-        const loop = (now: number) => {
-          if (stopped) return
-          raf = requestAnimationFrame(loop)
+    prev.current = []
+
+    const frame = () => new Promise<number>((r) => requestAnimationFrame(r))
+    void (async () => {
+      try {
+        while (!stopped) {
+          const now = await frame()
           const video = videoRef.current
-          if (!video || video.readyState < 2 || now - last < Math.max(LOCAL_MIN_INTERVAL_MS, cost * 1.5)) return
-          // La detección bloquea la página mientras corre: en equipos lentos se espacia para que la interfaz respire.
+          if (stopped) break
           // En pausa el fotograma no cambia: no hace falta volver a detectar.
-          if (video.currentTime === lastTime) return
-          last = now
+          if (!video || video.readyState < 2 || video.currentTime === lastTime || now - lastRun < LOCAL_MIN_INTERVAL_MS) continue
+          lastRun = now
           lastTime = video.currentTime
-          const started = performance.now()
-          const found = pose.detect(video, now)
+          const res = await detectLocal(video, engine, now)
+          if (stopped) break
           const aspect = video.videoWidth / video.videoHeight || 16 / 9
           const persons = trackPersons(
             prev.current,
-            found.map((p, i) => ({ ...p, id: i + 1 })),
+            res.persons.map((p, i) => ({ ...p, id: i + 1 })),
             nextId,
             aspect,
           )
           prev.current = persons
-          cost = performance.now() - started
-          setAnalysis({ persons, ball: null, ms: Math.round(cost), model: `MediaPipe Pose · ${pose.delegate}`, source: 'local' })
+          setAnalysis({ persons, ball: res.ball, ms: res.ms, model: `MediaPipe · ${res.delegate}`, source: 'local' })
           setStatus('ok')
           setMessage('')
         }
-        raf = requestAnimationFrame(loop)
-      })
-      .catch(() => {
+      } catch (e) {
         if (stopped) return
+        console.error('Fallo del modelo local:', e)
         setStatus('failed')
-        setMessage('No se pudo cargar el modelo del navegador. Prueba el modo continuo con Roboflow.')
+        setMessage('No se pudo ejecutar el modelo del navegador. Prueba el modo continuo con Roboflow.')
         setLive(false)
-      })
+      }
+    })()
     return () => {
       stopped = true
-      cancelAnimationFrame(raf)
     }
   }, [live, enabled, engine, videoRef])
 

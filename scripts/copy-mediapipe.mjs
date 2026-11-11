@@ -8,5 +8,5 @@ const from = join(root, 'node_modules/@mediapipe/tasks-vision/wasm')
 const to = join(root, 'public/mediapipe/wasm')
 
 mkdirSync(to, { recursive: true })
-for (const file of ['vision_wasm_internal.js', 'vision_wasm_internal.wasm']) copyFileSync(join(from, file), join(to, file))
+for (const file of ['vision_wasm_module_internal.js', 'vision_wasm_module_internal.wasm']) copyFileSync(join(from, file), join(to, file))
 console.log('MediaPipe WASM copiado a public/mediapipe/wasm')
