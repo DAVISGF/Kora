@@ -51,7 +51,7 @@ export const COPY: Record<string, CheckCopy> = {
         cue: 'Pon los pies al ancho de tus hombros.',
         drill: {
           name: 'Base firme',
-          steps: ['Párate con los pies al ancho de los hombros.', 'Da un salto corto hacia arriba.', 'Si caes en el mismo sitio, esa es tu base. Tira desde ahí.'],
+          steps: ['Párate con los pies al ancho de los hombros.', 'Da un salto corto hacia arriba.', 'Si caes en el mismo lugar, esa es tu base. Tira desde ahí.'],
           dose: '10 tiros cerca del aro',
         },
       },
@@ -78,7 +78,7 @@ export const COPY: Record<string, CheckCopy> = {
     },
     good: { title: 'Usas bien las piernas', seen: 'Doblas las rodillas antes de tirar. De ahí sale la fuerza del tiro.' },
     measured: (v) => `Tus rodillas al bajar: unos ${round(v)}°`,
-    target: 'Lo ideal: menos de 140°',
+    target: 'Como guía: menos de 140°',
     needs: null,
   },
   'shot.flare': {
@@ -86,7 +86,7 @@ export const COPY: Record<string, CheckCopy> = {
     fix: {
       default: {
         title: 'Mete el codo debajo del balón',
-        seen: 'el codo se abrió hacia fuera.',
+        seen: 'el codo se abrió hacia afuera.',
         why: 'Si el codo se abre, el balón sale torcido. Con el codo debajo, el balón va recto al aro.',
         cue: 'Apunta con el codo al aro, como si fuera una flecha.',
         drill: {
@@ -118,7 +118,7 @@ export const COPY: Record<string, CheckCopy> = {
     },
     good: { title: 'Estiras bien el brazo', seen: 'Sueltas el balón con el brazo estirado. Así sale alto.' },
     measured: (v) => `Tu codo al soltar: unos ${round(v)}°`,
-    target: 'Lo ideal: más de 160°, casi recto',
+    target: 'Como guía: más de 160°, casi recto',
     needs: 'lado',
   },
   'shot.follow': {
@@ -138,7 +138,7 @@ export const COPY: Record<string, CheckCopy> = {
     },
     good: { title: 'Terminas bien el tiro', seen: 'Dejas la mano arriba después de soltar el balón. Eso te da puntería.' },
     measured: (v) => `Tu mano se quedó arriba ${tenths(v)} s`,
-    target: 'Lo ideal: más de medio segundo',
+    target: 'Como guía: más de medio segundo',
     needs: null,
   },
   'shot.trunk': {
@@ -148,7 +148,7 @@ export const COPY: Record<string, CheckCopy> = {
         title: 'Sube recto al tirar',
         seen: 'tu cuerpo se inclinó mucho.',
         why: 'Si el cuerpo se va hacia un lado o hacia atrás, el balón también se desvía.',
-        cue: 'Salta y cae en el mismo sitio, recto como un cohete.',
+        cue: 'Salta y cae en el mismo lugar, recto como un cohete.',
         drill: {
           name: 'Salta y cae',
           steps: ['Haz una marca en el suelo.', 'Tira saltando desde la marca.', 'Tienes que caer encima de ella.'],
@@ -158,7 +158,7 @@ export const COPY: Record<string, CheckCopy> = {
     },
     good: null,
     measured: (v) => `Tu cuerpo se inclinó unos ${round(v)}°`,
-    target: 'Lo ideal: menos de 10°',
+    target: 'Como guía: menos de 10°',
     needs: null,
   },
 
@@ -200,7 +200,7 @@ export const COPY: Record<string, CheckCopy> = {
     },
     good: { title: 'Buena pierna de apoyo', seen: 'Doblas un poco la rodilla de apoyo. Eso te da equilibrio.' },
     measured: (v) => `Tu rodilla de apoyo: unos ${round(v)}°`,
-    target: 'Lo ideal: entre 135° y 160°',
+    target: 'Como guía: entre 120° y 160° (pierna recta: 180°)',
     needs: 'lado',
   },
   'kick.lean': {
@@ -210,7 +210,7 @@ export const COPY: Record<string, CheckCopy> = {
         title: 'Lleva el cuerpo sobre el balón',
         seen: 'te echaste mucho hacia atrás.',
         why: 'Si el cuerpo se va hacia atrás, el balón sale hacia arriba. Con el cuerpo encima, sale raso y con fuerza.',
-        cue: 'Al golpear, lleva el pecho hacia delante, encima del balón.',
+        cue: 'Al golpear, lleva el pecho hacia adelante, encima del balón.',
         drill: {
           name: 'Golpeo raso',
           steps: ['Pon dos conos a diez pasos.', 'Golpea para que el balón pase entre ellos sin levantarse.', 'Fíjate en que tu pecho quede sobre el balón.'],
@@ -219,26 +219,26 @@ export const COPY: Record<string, CheckCopy> = {
       },
     },
     good: { title: 'Cuerpo bien colocado', seen: 'No te echas hacia atrás al golpear. Así controlas la altura del balón.' },
-    measured: (v) => (v < 0 ? `Tu cuerpo: unos ${round(-v)}° hacia atrás` : `Tu cuerpo: unos ${round(v)}° hacia delante`),
-    target: 'Lo ideal: casi recto, no más de 10° hacia atrás',
+    measured: (v) => (v < 0 ? `Tu cuerpo: unos ${round(-v)}° hacia atrás` : `Tu cuerpo: unos ${round(v)}° hacia adelante`),
+    target: 'Como guía: casi recto, no más de 10° hacia atrás',
     needs: 'lado',
   },
   'kick.follow': {
     label: 'Final del golpeo',
     fix: {
       default: {
-        title: 'Sigue el movimiento después de golpear',
-        seen: 'frenaste la pierna justo al tocar el balón.',
-        why: 'Si frenas la pierna, el balón sale flojo. Si la pierna sigue, el balón lleva más fuerza y va a donde apuntas.',
+        title: 'En los tiros fuertes, deja que la pierna siga',
+        seen: 'tu pierna siguió muy poco después de tocar el balón.',
+        why: 'En un pase corto eso está bien. En un tiro fuerte, si la pierna sigue, el balón lleva más fuerza.',
         cue: 'Golpea a través del balón: tu pie sigue hacia donde quieres que vaya.',
         drill: {
           name: 'Golpea y cae',
-          steps: ['Golpea el balón.', 'Deja que la pierna siga hacia delante.', 'Cae sobre el pie con el que golpeaste.'],
+          steps: ['Golpea el balón.', 'Deja que la pierna siga hacia adelante.', 'Cae sobre el pie con el que golpeaste.'],
           dose: '10 golpeos',
         },
       },
     },
-    good: { title: 'Buen final del golpeo', seen: 'Tu pierna sigue hacia delante después de golpear. Eso da fuerza y puntería.' },
+    good: { title: 'Buen final del golpeo', seen: 'Tu pierna sigue hacia adelante después de golpear. Eso da fuerza y puntería.' },
     measured: null,
     target: null,
     needs: null,
@@ -254,15 +254,15 @@ export const COPY: Record<string, CheckCopy> = {
         why: 'Los brazos marcan el ritmo de las piernas. Estirados se mueven lento y te frenan.',
         cue: 'Dobla los codos como una «L» y mueve las manos del bolsillo a la barbilla.',
         drill: {
-          name: 'Braceo en el sitio',
-          steps: ['Párate con un pie delante del otro.', 'Mueve los brazos rápido, con los codos en «L».', 'No muevas las piernas ni los hombros.'],
+          name: 'Braceo en el lugar',
+          steps: ['Párate con un pie adelante del otro.', 'Mueve los brazos rápido, con los codos en «L».', 'No muevas las piernas ni los hombros.'],
           dose: '4 series de 10 segundos',
         },
       },
     },
     good: { title: 'Buen braceo', seen: 'Llevas los codos doblados. Eso te ayuda a correr rápido.' },
     measured: (v) => `Tus codos al correr: unos ${round(v)}°`,
-    target: 'Lo ideal: cerca de 90°, en forma de «L»',
+    target: 'Como guía: cerca de 90°, en forma de «L»',
     needs: 'lado',
   },
   'run.knees': {
@@ -275,7 +275,7 @@ export const COPY: Record<string, CheckCopy> = {
         cue: 'Sube la rodilla hasta la cadera, como si subieras un escalón alto.',
         drill: {
           name: 'Rodillas arriba',
-          steps: ['Corre en el sitio subiendo las rodillas hasta la cadera.', 'Pisa con la parte de delante del pie.', 'Mantén el cuerpo recto.'],
+          steps: ['Corre en el lugar subiendo las rodillas hasta la cadera.', 'Pisa con la parte de adelante del pie.', 'Mantén el cuerpo recto.'],
           dose: '4 series de 10 metros',
         },
       },
@@ -291,16 +291,16 @@ export const COPY: Record<string, CheckCopy> = {
       default: {
         title: 'No corras echado hacia atrás',
         seen: 'corrías con el cuerpo echado hacia atrás.',
-        why: 'Si el cuerpo va hacia atrás, cada paso te frena. Un poco hacia delante, cada paso te empuja.',
-        cue: 'Inclina todo el cuerpo un poco hacia delante, como si te fueras a caer.',
+        why: 'Si el cuerpo va hacia atrás, cada paso te frena. Un poco hacia adelante, cada paso te empuja.',
+        cue: 'Inclina todo el cuerpo un poco hacia adelante, como si te fueras a caer.',
         drill: {
           name: 'Caída y salida',
-          steps: ['Párate recto con los pies juntos.', 'Déjate caer hacia delante, recto como una tabla.', 'Justo antes de caer, sal corriendo diez metros.'],
+          steps: ['Párate recto con los pies juntos.', 'Échate un poco hacia adelante, recto como una tabla.', 'Justo antes de caer, sal corriendo diez metros.'],
           dose: '5 salidas',
         },
       },
     },
-    good: { title: 'Buena postura', seen: 'Corres con el cuerpo un poco hacia delante. Así cada paso te empuja.' },
+    good: { title: 'Buena postura', seen: 'Corres con el cuerpo un poco hacia adelante. Así cada paso te empuja.' },
     measured: null,
     target: null,
     needs: 'lado',
@@ -309,10 +309,10 @@ export const COPY: Record<string, CheckCopy> = {
     label: 'Brazos, vistos de frente',
     fix: {
       default: {
-        title: 'Mueve los brazos hacia delante, no hacia los lados',
+        title: 'Mueve los brazos hacia adelante, no hacia los lados',
         seen: 'tus manos cruzaban por delante del cuerpo.',
-        why: 'Si los brazos cruzan, tu cuerpo gira de lado a lado. Pierdes fuerza para ir hacia delante.',
-        cue: 'Tus manos van de atrás hacia delante, como las ruedas de un tren.',
+        why: 'Si los brazos cruzan, tu cuerpo gira de lado a lado. Pierdes fuerza para ir hacia adelante.',
+        cue: 'Tus manos van de atrás hacia adelante, como las ruedas de un tren.',
         drill: {
           name: 'Braceo en pasillo',
           steps: ['Párate entre dos conos, muy cerca de tus hombros.', 'Mueve los brazos rápido sin tocar los conos.', 'Después hazlo corriendo.'],
@@ -320,7 +320,7 @@ export const COPY: Record<string, CheckCopy> = {
         },
       },
     },
-    good: { title: 'Brazos rectos', seen: 'Tus brazos van hacia delante y hacia atrás, sin cruzarse.' },
+    good: { title: 'Brazos rectos', seen: 'Tus brazos van hacia adelante y hacia atrás, sin cruzarse.' },
     measured: null,
     target: null,
     needs: 'frente',
@@ -349,8 +349,8 @@ export function countNoun(action: ActionKind, n: number): string {
 
 export const CONFIDENCE_NOTE: Record<Confidence, string> = {
   alta: 'Lo vimos varias veces y con claridad.',
-  media: 'Lo vimos pocas veces, o desde un ángulo que no es el mejor.',
-  baja: 'Solo lo vimos una vez. Graba más repeticiones para confirmarlo.',
+  media: 'Lo vimos pocas veces, o no se veía del todo bien.',
+  baja: 'Lo vimos una sola vez, o desde muy lejos. Graba otra vez para confirmarlo.',
 }
 
 /** Por qué no se pudo medir algo, y qué hacer la próxima vez. */
@@ -379,4 +379,4 @@ export const NEXT_CHALLENGE: Record<ActionKind, string> = {
   run: 'Corre un poco más rápido sin perder la técnica. Graba otra vez y compara.',
 }
 
-export const DISCLAIMER = 'Esto es una ayuda para entrenar. No reemplaza a tu entrenador ni es un consejo médico.'
+export const DISCLAIMER = 'Esto es una ayuda para entrenar. No reemplaza a tu entrenador ni es un consejo médico. Si algo te duele, para y avisa a un adulto.'

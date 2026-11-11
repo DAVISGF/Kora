@@ -29,6 +29,7 @@ const STATUS_LABEL: Record<Status, string> = { fix: 'Para corregir', polish: 'Pa
 /** La foto del instante con el cuerpo dibujado encima y la parte que importa resaltada. */
 export function EvidencePhoto({ evidence, status, alt, className }: { evidence: Evidence; status: Status; alt: string; className?: string }) {
   const { crop, pose } = evidence
+  if (!evidence.image) return null
   const u = Math.max(crop.w, crop.h) / 100
   const at = (j: Joint) => {
     const p = pose[j]
@@ -140,7 +141,7 @@ export function FocusCard({ finding }: { finding: Finding }) {
         <h2 className="m-0 text-2xl leading-tight font-bold">{finding.title}</h2>
       </header>
       <div className="flex flex-wrap gap-x-7 gap-y-5">
-        {e && (
+        {e?.image && (
           <div className="flex min-w-0 flex-[1_1_240px] flex-col gap-2" style={{ maxWidth: Math.round((FOCUS_PHOTO_H * e.crop.w) / e.crop.h) }}>
             <EvidencePhoto evidence={e} status={finding.status} alt={`Foto del video en ${fmtClock(e.t)}: ${finding.label.toLowerCase()} resaltado`} />
             <span className="text-xs text-mute">Tu foto en {fmtClock(e.t)}. En color, la parte del cuerpo que miramos.</span>
@@ -195,7 +196,7 @@ function DrillBox({ finding }: { finding: Finding }) {
 export function PolishCard({ finding }: { finding: Finding }) {
   return (
     <article className={cx(card, 'flex flex-wrap gap-4 p-4')}>
-      {finding.evidence && (
+      {finding.evidence?.image && (
         <div className="w-[120px] shrink-0">
           <EvidencePhoto evidence={finding.evidence} status={finding.status} alt={`Foto del video en ${fmtClock(finding.evidence.t)}`} />
         </div>
@@ -215,7 +216,7 @@ export function PolishCard({ finding }: { finding: Finding }) {
         )}
         {finding.drill && (
           <details className="rounded-lg border border-line bg-inset px-3 py-2">
-            <summary className="flex min-h-9 cursor-pointer items-center text-[13px] font-semibold">Ver el ejercicio: {finding.drill.name}</summary>
+            <summary className="flex min-h-11 cursor-pointer items-center text-[13px] font-semibold">Ver el ejercicio: {finding.drill.name}</summary>
             <ol className="m-0 mt-1 mb-1 flex list-decimal flex-col gap-1 pl-5 text-[15px] leading-relaxed">
               {finding.drill.steps.map((s) => (
                 <li key={s}>{s}</li>

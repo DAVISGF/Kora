@@ -265,14 +265,15 @@ export function detectKicks(series: PoseSeries): KickRep[] {
     // ── Tronco: echado hacia atrás (negativo) o sobre el balón (positivo) ──
     if (!sideways) missing.lean = 'view'
     else {
-      const leans = span(f, tC - 0.1, tC + 0.03).map((i) => trunkLean(f[i].pose)).filter((x): x is number => x !== null)
+      const full = (i: number) => SIDES.every((sd) => pt(f[i].pose, joint(sd, 'shoulder')) && pt(f[i].pose, joint(sd, 'hip')))
+      const leans = span(f, tC - 0.1, tC + 0.03).filter(full).map((i) => trunkLean(f[i].pose)).filter((x): x is number => x !== null)
       if (!leans.length) missing.lean = 'hidden'
       else m.lean = { value: median(leans)! * dir, t: f[dep.i].t, method: 'angle' }
     }
 
     // ── Final: hasta dónde sube la pierna después de golpear (la de apoyo apenas se levanta) ──
     const lifts = span(f, tC, tC + 0.4)
-      .map((i) => ({ v: Math.max(...SIDES.map((sd) => thighLift(body, i, sd) ?? -1)), t: f[i].t }))
+      .map((i) => ({ v: thighLift(body, i, side) ?? -1, t: f[i].t }))
       .filter((x) => x.v >= 0)
     const last = f[f.length - 1].t
     if (lifts.length < 2) missing.follow = last - tC < 0.25 ? 'cut' : 'hidden'

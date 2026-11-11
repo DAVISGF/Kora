@@ -65,7 +65,8 @@ export function analyzePerson(input: PersonInput, sport: SportId): PersonReps {
     const series = cleanSeries(raw)
     frames.push(...series.frames)
     if (sport === 'basket') {
-      const found = detectShots(series, { needBall: input.crowded })
+      // Unos brazos arriba sin balón (defensa, celebración) no son un tiro.
+      const found = detectShots(series, { needBall: true })
       reps.push(...found.shots)
       layups.push(...found.layups)
     } else reps.push(...detectKicks(series))
@@ -151,7 +152,7 @@ function findingOf(person: PersonReps, check: Check, reps: Rep[]): { finding: Fi
   else if (copy.good && good.length >= Math.max(1, Math.ceil(graded.length * 0.6))) status = 'good'
   if (!status) return { finding: null, unmeasured: null }
 
-  const confidence = confidenceOf(graded, check, person.small)
+  const confidence = confidenceOf(status === 'good' ? good : flagged, check, person.small)
   const median = [...graded].sort((a, b) => a.value - b.value)[graded.length >> 1]
   const base = {
     id: check.id,
@@ -242,7 +243,7 @@ export function coachPerson(person: PersonReps, sport: SportId): PersonCoach | n
   const extras: string[] = []
   if (person.contested) {
     const n = person.contested
-    extras.push(`En ${n === 1 ? 'una jugada' : `${n} jugadas`} había otro jugador muy cerca y no pudimos ver bien tu técnica.`)
+    extras.push(`En ${n === 1 ? 'una jugada' : `${n} jugadas`} había alguien muy cerca y no pudimos ver bien tu técnica.`)
   }
   if (person.layups.length) {
     const n = person.layups.length
@@ -281,15 +282,15 @@ export function buildReport(input: ReportInput): CoachReport {
   let empty: string | null = null
   if (!input.people.length) {
     empty = input.tooSmall
-      ? 'En el video las personas se ven muy pequeñas para ver bien su técnica.'
-      : 'No encontramos a nadie en el video para ver su técnica.'
+      ? 'En el video apareces muy lejos de la cámara. No pudimos ver bien tu técnica.'
+      : 'No pudimos seguirte bien en este video para medir tu técnica.'
     tips.add(TIPS.closer)
     tips.add(TIPS.whole)
   } else if (!people.length) {
     empty =
       input.sport === 'basket'
-        ? 'Vimos al jugador, pero no reconocimos ningún tiro ni una carrera en este video.'
-        : 'Vimos al jugador, pero no reconocimos ningún golpeo ni una carrera en este video.'
+        ? 'Te vimos, pero no reconocimos ningún tiro ni ninguna carrera en este video.'
+        : 'Te vimos, pero no reconocimos ningún golpeo ni ninguna carrera en este video.'
     tips.add(TIPS.whole)
     if (input.sport === 'futbol') tips.add(TIPS.ball)
     tips.add(TIPS.still)

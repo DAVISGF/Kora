@@ -107,7 +107,7 @@ describe('informe del Coach', () => {
     const p = r.people[0]
     expect(p.actions).toHaveLength(0)
     expect(p.focus).toBeNull()
-    expect(p.extras.join(' ')).toContain('había otro jugador muy cerca')
+    expect(p.extras.join(' ')).toContain('había alguien muy cerca')
   })
 
   it('a una persona pequeña en la imagen le baja la seguridad', () => {
@@ -121,7 +121,7 @@ describe('informe del Coach', () => {
   it('explica por qué no hay informe cuando no hay nada que analizar', () => {
     const nobody = report('basket', [], 3)
     expect(nobody.people).toHaveLength(0)
-    expect(nobody.empty).toContain('muy pequeñas')
+    expect(nobody.empty).toContain('muy lejos')
     const still = shots([{}])
     const idle = report('futbol', [person([{ ...still, frames: still.frames.slice(0, 8) }])])
     expect(idle.people).toHaveLength(0)

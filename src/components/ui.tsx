@@ -66,10 +66,10 @@ export function SampleBadge({ children = 'Datos de ejemplo' }: { children?: Reac
 
 export function PageHeader({ eyebrow: e, title, children }: { eyebrow: string; title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <span className="font-mono text-xs tracking-widest text-mute uppercase">{e}</span>
       <h1 className="m-0 text-[28px] leading-tight font-bold">{title}</h1>
-      {children && <p className="m-0 max-w-[64ch] text-mute">{children}</p>}
+      {children && <p className="m-0 max-w-[64ch] text-mute [overflow-wrap:anywhere]">{children}</p>}
     </div>
   )
 }

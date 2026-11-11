@@ -28,6 +28,8 @@ const UNEVEN_FEET = 0.45
 /** Lo que se alarga la medida cadera–tobillo con el cuerpo estirado y los brazos arriba respecto a estar de pie. */
 const STRETCH = 0.94
 const HOLD_GOOD_S = 0.6
+/** De la carga a soltar el balón, a velocidad normal. */
+const NORMAL_PUSH_S = 0.35
 /** Ángulo de codo por debajo del cual el brazo está doblado se mire desde donde se mire. */
 const EXTENSION_SURE = 150
 
@@ -235,14 +237,23 @@ export function detectShots(series: PoseSeries, opts: { needBall?: boolean } = {
         end = i
       }
     }
-    const hold = f[end].t - tRel
+    // En un video a cámara lenta todo dura más: se toma como reloj lo que tarda en subir desde
+    // la carga hasta soltar (unos 0,35 s a velocidad normal) y se descuenta la lentitud.
+    // Solo vale si de verdad bajó: sin carga clara, el instante de la carga es arbitrario.
+    const push = info.load !== undefined && m.legs && m.legs.value < 155 ? tRel - info.load : null
+    const slow = push !== null ? Math.max(1, push / NORMAL_PUSH_S) : 1
+    if (slow > 1.3) info.slow = slow
+    const hold = (f[end].t - tRel) / slow
     const cut = end >= f.length - 2
     if (cut && hold < HOLD_GOOD_S) missing.follow = 'cut'
     else m.follow = { value: hold, t: Math.min(f[end].t, tRel + 0.3) }
 
     // ── Brazo: cuánto se estira al soltar ──
     const ext = span(f, tRel - 0.1, tRel + 0.3).map((i) => ({ i, a: elbowSeen(body, i, side) })).filter((x): x is { i: number; a: number } => x.a !== null)
-    if (ext.length < 2) missing.extension = pt(f[release].pose, joint(side, 'elbow')) ? 'view' : 'hidden'
+    const after = span(f, tRel, tRel + 0.3)
+    const lost = after.filter((i) => !pt(f[i].pose, joint(side, 'wrist'))).length
+    if (after.length && lost * 2 > after.length) missing.extension = 'hidden'
+    else if (ext.length < 2) missing.extension = pt(f[release].pose, joint(side, 'elbow')) ? 'view' : 'hidden'
     else {
       const value = robust(ext.map((x) => x.a), 'max')!
       const at = ext.reduce((a, x) => (Math.abs(x.a - value) < Math.abs(a.a - value) ? x : a))

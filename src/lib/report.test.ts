@@ -42,7 +42,7 @@ describe('informe descargable del Coach', () => {
   it('si no hubo nada que analizar, lo explica', () => {
     const report = buildReport({ sport: 'basket', people: [], tooSmall: 2, frames: { requested: 0, measured: 0 } })
     const md = coachReportMd(report, 'lejos.mp4', 'Baloncesto')
-    expect(md).toContain('muy pequeñas')
+    expect(md).toContain('muy lejos')
     expect(md).toContain('## Para grabar mejor')
     expect(md).not.toMatch(/undefined|null|NaN/)
   })

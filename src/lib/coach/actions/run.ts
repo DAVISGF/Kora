@@ -5,7 +5,7 @@
 import { bodyOf, percentile, span, thighLift, type Body } from '../body'
 import { angleAt, center, joint, pt, SIDES, width } from '../geometry'
 import { median3 } from '../series'
-import type { Measure, Missing, PoseSeries, Rep, Side, View } from '../types'
+import type { Joint, Measure, Missing, PoseSeries, Rep, Side, View } from '../types'
 
 /** Diferencia de altura entre los tobillos, en troncos, para contar un pie como «arriba». */
 const SWING_MIN = 0.3
@@ -209,7 +209,8 @@ export function detectRuns(series: PoseSeries): RunRep[] {
       for (const i of frames) {
         const shoulders = center(f[i].pose, 'shoulder')
         const hips = center(f[i].pose, 'hip')
-        if (shoulders && hips) leans.push((Math.atan2((shoulders.x - hips.x) * widen, hips.y - shoulders.y) * 180) / Math.PI)
+        const all4 = ['left_shoulder', 'right_shoulder', 'left_hip', 'right_hip'].every((j) => pt(f[i].pose, j as Joint))
+        if (shoulders && hips && all4) leans.push((Math.atan2((shoulders.x - hips.x) * widen, hips.y - shoulders.y) * 180) / Math.PI)
       }
       if (leans.length < 4) missing.lean = 'hidden'
       else m.lean = { value: median(leans) * dir, t: (start + end) / 2, method: 'angle' }
