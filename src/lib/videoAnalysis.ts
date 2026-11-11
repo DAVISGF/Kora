@@ -4,7 +4,7 @@
 
 import type { EvCode, GameEvent, Kpi, SportId } from '../data/sports'
 import { comma, fmtTime } from './util'
-import { grabFrame, MIN_KEYPOINT_CONF, requestVision, trackPersons, VisionError, type Box, type Person } from './vision'
+import { grabFrame, jointAngles, MIN_KEYPOINT_CONF, requestVision, trackPersons, VisionError, type Box, type JointAngle, type Person } from './vision'
 
 export const SAMPLE_STEP = 0.5 // segundos entre fotogramas
 export const MAX_FRAMES = 160 // 80 s de video por análisis
@@ -15,7 +15,7 @@ const RETRIES = 2
 /** Desplazamiento entre dos muestras, en alturas de cuerpo, a partir del cual se afina el tramo */
 const REFINE_MOVE_HEIGHTS = 0.8
 const PERSON_HEIGHT_M = 1.75
-const SPRINT_MS = 5 // m/s estimados
+const SPRINT_MS = 5 // m/s estimados (mismo valor que SPRINT_THRESHOLD)
 const MAX_PLAUSIBLE_MS = 11 // por encima se asume un cambio de identidad
 const BALL_FAST_MS = 12
 const REFRACTORY_S = 2
@@ -33,7 +33,34 @@ export interface RealEvent {
   code: EvCode
   type: string
   desc: string
+  /** Persona del seguimiento a la que pertenece el evento, si la hay */
+  personId?: number
 }
+
+/** Todo lo medido de una persona a lo largo del tramo analizado. */
+export interface PersonStats {
+  id: number
+  /** Recorte de la persona en su mejor fotograma, como data URL */
+  thumb: string | null
+  thumbT: number
+  thumbBox: Box
+  conf: number
+  meters: number
+  topSpeed: number
+  avgSpeed: number
+  firstT: number
+  lastT: number
+  samples: number
+  sprints: number
+  events: RealEvent[]
+  /** Ángulos articulares en el fotograma de la foto */
+  angles: JointAngle[]
+  points: { x: number; y: number }[]
+  speeds: { t: number; v: number }[]
+}
+
+export const MAX_PEOPLE = 20
+export const SPRINT_THRESHOLD = 5
 
 export interface VideoAnalysis {
   start: number
@@ -46,6 +73,8 @@ export interface VideoAnalysis {
   legend: [EvCode, string][]
   /** Distancia estimada por persona seguida, de mayor a menor */
   perf: [player: string, pct: number, meters: number][]
+  /** Ficha de cada persona seguida, de mayor a menor distancia */
+  people: PersonStats[]
   /** Posición de los pies de cada detección, normalizada a la imagen */
   points: { x: number; y: number }[]
 }
@@ -192,10 +221,15 @@ export async function runVideoAnalysis(
     await pass(mid, false)
   }
 
-  video.removeAttribute('src')
-  video.load()
-  if (opts.signal.aborted) throw new DOMException('Análisis cancelado', 'AbortError')
-  if (failure) throw failure
+  const dispose = () => {
+    video.removeAttribute('src')
+    video.load()
+  }
+  if (opts.signal.aborted || failure) {
+    dispose()
+    if (opts.signal.aborted) throw new DOMException('Análisis cancelado', 'AbortError')
+    throw failure
+  }
 
   // El seguimiento se hace al final, en orden temporal.
   const frames = [...byTime.values()].sort((x, y) => x.t - y.t)
@@ -205,7 +239,42 @@ export async function runVideoAnalysis(
     f.persons = trackPersons(prev, f.persons, nextId, aspect)
     prev = f.persons
   }
-  return summarize(frames, sport, aspect, opts.ball, start)
+  const analysis = summarize(frames, sport, aspect, opts.ball, start)
+
+  // Foto de cada persona: se vuelve a su mejor fotograma y se recorta su caja.
+  for (const person of analysis.people) {
+    if (opts.signal.aborted) break
+    try {
+      await seekTo(video, person.thumbT)
+      person.thumb = cropPerson(video, person.thumbBox)
+    } catch {
+      person.thumb = null
+    }
+  }
+  dispose()
+  return analysis
+}
+
+let cropCanvas: HTMLCanvasElement | null = null
+
+function cropPerson(video: HTMLVideoElement, box: Box): string | null {
+  const vw = video.videoWidth
+  const vh = video.videoHeight
+  const padX = box.w * 0.18
+  const padY = box.h * 0.1
+  const x = Math.max(0, (box.x - padX) * vw)
+  const y = Math.max(0, (box.y - padY) * vh)
+  const w = Math.min(vw - x, (box.w + padX * 2) * vw)
+  const h = Math.min(vh - y, (box.h + padY * 2) * vh)
+  if (w < 4 || h < 4) return null
+  const scale = Math.min(1, 420 / h)
+  cropCanvas ??= document.createElement('canvas')
+  cropCanvas.width = Math.round(w * scale)
+  cropCanvas.height = Math.round(h * scale)
+  const ctx = cropCanvas.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(video, x, y, w, h, 0, 0, cropCanvas.width, cropCanvas.height)
+  return cropCanvas.toDataURL('image/jpeg', 0.82)
 }
 
 const median = (xs: number[]) => {
@@ -231,12 +300,18 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
   let topSpeedId = 0
   let sprints = 0
   const distance = new Map<number, number>()
+  const people: PersonStats[] = []
 
   for (const [id, obs] of tracks) {
     // La altura mediana de la caja es la regla: equivale a ~1,75 m.
     const height = median(obs.map((o) => o.p.box.h))
     if (!height) continue
     let meters = 0
+    let moving = 0
+    let best = 0
+    let own = 0
+    const speeds: { t: number; v: number }[] = []
+    const mine: RealEvent[] = []
     let sprinting = false
     let lastSprint = -Infinity
     let lastArms = -Infinity
@@ -252,14 +327,18 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
           const speed = d / dt
           if (speed <= MAX_PLAUSIBLE_MS) {
             meters += d
+            moving += dt
+            best = Math.max(best, speed)
+            speeds.push({ t: cur.t, v: speed })
             if (speed > topSpeed) {
               topSpeed = speed
               topSpeedId = id
             }
             if (speed >= SPRINT_MS && !sprinting && cur.t - lastSprint >= REFRACTORY_S) {
               sprints++
+              own++
               lastSprint = cur.t
-              events.push({ t: cur.t, code: 'S', type: 'Sprint', desc: `Persona #${id} — ${comma(speed)} m/s estimados` })
+              mine.push({ t: cur.t, code: 'S', type: 'Sprint', desc: `Persona #${id} — ${comma(speed)} m/s estimados`, personId: id })
             }
             sprinting = speed >= SPRINT_MS
           }
@@ -272,11 +351,33 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
         const head = kp.get('nose') ?? kp.get('left_eye') ?? kp.get('right_eye')
         if (lw && rw && head && lw.y < head.y && rw.y < head.y && cur.t - lastArms >= REFRACTORY_S) {
           lastArms = cur.t
-          events.push({ t: cur.t, code: 'T', type: 'Posible tiro', desc: `Persona #${id} — ambas manos sobre la cabeza` })
+          mine.push({ t: cur.t, code: 'T', type: 'Posible tiro', desc: `Persona #${id} — ambas manos sobre la cabeza`, personId: id })
         }
       }
     }
     if (meters > 0) distance.set(id, meters)
+    events.push(...mine)
+
+    // La foto sale de la observación más nítida: caja grande y detección segura.
+    const shot = obs.reduce((a, b) => (b.p.conf * b.p.box.w * b.p.box.h > a.p.conf * a.p.box.w * a.p.box.h ? b : a))
+    people.push({
+      id,
+      thumb: null,
+      thumbT: shot.t,
+      thumbBox: shot.p.box,
+      conf: obs.reduce((sum, o) => sum + o.p.conf, 0) / obs.length,
+      meters,
+      topSpeed: best,
+      avgSpeed: moving > 0 ? meters / moving : 0,
+      firstT: obs[0].t,
+      lastT: obs[obs.length - 1].t,
+      samples: obs.length,
+      sprints: own,
+      events: mine,
+      angles: jointAngles(shot.p, aspect),
+      points: obs.map((o) => feet(o.p.box)),
+      speeds,
+    })
   }
 
   // Balón rápido: desplazamiento entre muestras consecutivas, con la altura mediana de las personas como escala.
@@ -343,6 +444,7 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
       ['T', sport === 'basket' ? 'Posible tiro o balón rápido' : 'Golpeo de balón'],
     ],
     perf: ranked.map(([id, m]) => [`#${id}`, Math.round((m / best) * 100), Math.round(m)]),
+    people: people.sort((a, b) => b.meters - a.meters || b.samples - a.samples).slice(0, MAX_PEOPLE),
     points,
   }
 }

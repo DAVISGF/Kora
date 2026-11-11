@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward } from 'lucide-react'
 import { Biomech, Compare, Heatmap, ImageHeatmap, KpiGrid, PerfBars } from '../components/Charts'
 import { DiagSummary } from '../components/Diag'
+import PersonModal from '../components/PersonModal'
 import type { LayerState } from '../components/Scene'
 import Viewer, { CAMERAS, type Orbit, type ViewId } from '../components/Viewer'
 import { btnGhost, btnPrimary, card, input, Segmented } from '../components/ui'
@@ -75,6 +76,8 @@ function AnalysisView() {
   // Análisis del video completo: KPIs y eventos reales.
   const [scan, setScan] = useState<{ done: number; total: number } | null>(null)
   const [scanError, setScanError] = useState('')
+  const [personId, setPersonId] = useState<number | null>(null)
+  const person = videoAnalysis?.people.find((p) => p.id === personId) ?? null
   const abortRef = useRef<AbortController | null>(null)
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -182,6 +185,8 @@ function AnalysisView() {
       {panel === 'download' && (
         <DownloadPanel data={hasVideo ? { ...data, match: video?.name ?? data.match, events, kpis: videoAnalysis?.kpis ?? [], diags: [] } : data} secs={secs} />
       )}
+
+      {person && <PersonModal key={person.id} person={person} onSeek={(t) => seek((t / secs) * 100)} onClose={() => setPersonId(null)} />}
 
       <div className="flex flex-wrap">
         <main className="flex min-w-0 flex-[999_1_600px] flex-col gap-4 p-5">
@@ -471,6 +476,7 @@ function AnalysisView() {
                   values={videoAnalysis.perf.map((r) => r[2])}
                   unit="m"
                   who="Persona"
+                  onSelect={(i) => setPersonId(Number(videoAnalysis.perf[i][0].slice(1)))}
                 />
               )}
             </>

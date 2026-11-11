@@ -62,6 +62,8 @@ Real, con la clave configurada:
   personas en cuadro, velocidad máxima, distancia, sprints, balón detectado, mapa de calor sobre la imagen y,
   en baloncesto, posibles tiros (ambas manos sobre la cabeza). Velocidades y distancias son estimaciones: usan
   la altura de cada persona (1,75 m) como escala y no descuentan el movimiento de la cámara.
+- **Ficha de persona**: al pulsar una fila de «Rendimiento por jugador» se abre una ventana con su foto recortada
+  del video, sus estadísticas, su velocidad en el tiempo, los eventos detectados y la pose de ese fotograma.
 
 Funciona en el navegador, sin backend:
 
