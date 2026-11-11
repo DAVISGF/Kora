@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { armElevation, classifyView, elbowAngle, facing, frontalRatio, kneeAngle, median, thighAngle, trunkLean } from './geometry'
+import { armElevation, elbowAngle, facing, kneeAngle, median, thighAngle, trunkLean } from './geometry'
 import { figure, type FigureSpec } from './testing/synth'
 
 const standing: FigureSpec = {
@@ -36,15 +36,6 @@ describe('geometría de la pose', () => {
     expect(thighAngle(figure(standing), 'left')).toBeCloseTo(0, 0)
     const pose = figure(with_({ legs: { left: { lift: 90, bend: 90 }, right: { lift: 0, bend: 0 } } }))
     expect(thighAngle(pose, 'left')).toBeCloseTo(90, 0)
-  })
-
-  it('distingue perfil, oblicuo y de frente por el ancho de hombros', () => {
-    const ratio = (yaw: number) => frontalRatio(figure(with_({ yaw })))!
-    expect(classifyView(ratio(0))).toBe('side')
-    expect(classifyView(ratio(15))).toBe('side')
-    expect(classifyView(ratio(40))).toBe('oblique')
-    expect(classifyView(ratio(80))).toBe('front')
-    expect(ratio(90)).toBeCloseTo(0.9, 1)
   })
 
   it('un ángulo medido de frente se deforma: por eso hay que comprobar la vista', () => {

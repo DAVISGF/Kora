@@ -102,14 +102,17 @@ export async function analyzeFrame(video: HTMLVideoElement, opts: { ball: boolea
 
 /** Salto máximo entre muestras, en alturas de cuerpo (~4,5 m con 1,75 m por persona). */
 const MAX_JUMP_HEIGHTS = 2.6
+/** A quien se dejó de ver hace un momento solo se le reconoce si reaparece cerca de donde estaba. */
+const MAX_STALE_JUMP_HEIGHTS = 1.3
 
 /**
  * Seguimiento simple entre fotogramas: cada persona hereda el identificador de
  * la detección anterior más cercana, siempre que el salto sea verosímil; las
  * nuevas reciben uno nuevo. Se mide en alturas de cuerpo para que no dependa
- * de lo lejos que esté de la cámara.
+ * de lo lejos que esté de la cámara. `stale` marca a quienes no estaban en la
+ * muestra anterior, sino en alguna de las previas.
  */
-export function trackPersons(prev: Person[], next: Person[], nextId: { current: number }, aspect = 16 / 9): Person[] {
+export function trackPersons(prev: Person[], next: Person[], nextId: { current: number }, aspect = 16 / 9, stale?: Set<number>): Person[] {
   const free = new Set(prev.map((p) => p.id))
   const pairs = next
     .flatMap((n, ni) =>
@@ -121,7 +124,7 @@ export function trackPersons(prev: Person[], next: Person[], nextId: { current: 
         return { ni, id: p.id, cost: Math.hypot(dx, dy) / height, sizeRatio }
       }),
     )
-    .filter((m) => m.cost <= MAX_JUMP_HEIGHTS && m.sizeRatio <= 2)
+    .filter((m) => m.cost <= (stale?.has(m.id) ? MAX_STALE_JUMP_HEIGHTS : MAX_JUMP_HEIGHTS) && m.sizeRatio <= 2)
     .sort((a, b) => a.cost - b.cost)
   const assigned = new Map<number, number>()
   for (const m of pairs) {

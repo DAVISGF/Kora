@@ -73,11 +73,10 @@ export async function POST(request: Request): Promise<Response> {
     return json(400, { error: 'Se esperaba un fotograma JPEG en base64 de hasta 2 MB.' })
   }
 
-  // «precise» se usa en los recortes de una sola persona del análisis de técnica: menos volumen, más exactitud.
+  // «precise» se usa en los recortes de una sola persona del análisis de técnica, donde interesa
+  // no perder ningún punto: mismo modelo por defecto, con un umbral de confianza más bajo.
   const precise = body?.pose === 'precise'
-  const poseModel = precise
-    ? process.env.ROBOFLOW_POSE_MODEL_PRECISE || 'coco-pose-detection/3'
-    : process.env.ROBOFLOW_POSE_MODEL || 'coco-pose-detection/1'
+  const poseModel = (precise && process.env.ROBOFLOW_POSE_MODEL_PRECISE) || process.env.ROBOFLOW_POSE_MODEL || 'coco-pose-detection/3'
   const objectModel = process.env.ROBOFLOW_OBJECT_MODEL || 'coco/25'
 
   try {

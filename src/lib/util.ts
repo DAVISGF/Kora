@@ -14,6 +14,12 @@ export function fmtShort(secs: number): string {
   return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`
 }
 
+/** Segundos → m:ss, como lo diría una persona («0:03») */
+export function fmtClock(secs: number): string {
+  const s = Math.max(0, Math.round(secs))
+  return `${Math.floor(s / 60)}:${pad(s % 60)}`
+}
+
 export const comma = (n: number, digits = 1) => n.toFixed(digits).replace('.', ',')
 
 /** Descarga un archivo de texto generado en el navegador. */

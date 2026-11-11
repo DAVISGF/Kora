@@ -1,4 +1,6 @@
 import type { SportData } from '../data/sports'
+import { DISCLAIMER } from './coach/content'
+import type { CoachReport, Finding } from './coach/types'
 import type { Clip } from './store'
 import { fmtTime, toCsv } from './util'
 
@@ -75,4 +77,32 @@ export function clipReportMd(clip: Clip): string {
 
 export function clipCsv(clip: Clip): string {
   return toCsv([['fase', 'duracion', 'metrica', 'estado'], ...clip.phases.map((p) => [p.name, p.dur, p.metric, p.state > 0 ? 'en rango' : p.state < 0 ? 'fuera' : 'justo'])])
+}
+
+function findingMd(f: Finding): string[] {
+  const out = [`### ${f.title}`, `${f.label} · ${f.seen}`]
+  if (f.measured) out.push(`${f.measured}${f.target ? ` · ${f.target}` : ''}`)
+  if (f.why) out.push('', `**Por qué importa:** ${f.why}`)
+  if (f.cue) out.push('', `**La clave:** ${f.cue}`)
+  if (f.drill) out.push('', `**Ejercicio: ${f.drill.name}** (${f.drill.dose})`, ...f.drill.steps.map((s, i) => `${i + 1}. ${s}`))
+  const times = [...new Set(f.moments.map((t) => fmtTime(t)))]
+  if (times.length) out.push('', `Míralo en el video: ${times.join(', ')}`)
+  out.push('', `_${f.confidenceNote}_`, '')
+  return out
+}
+
+/** El informe del AI Coach medido en el video, en Markdown. */
+export function coachReportMd(report: CoachReport, name: string, sportLabel: string): string {
+  const lines = [`# AI Coach · ${name}`, sportLabel, `> ${DISCLAIMER}`, '']
+  if (report.empty) lines.push(report.empty, '')
+  report.people.forEach((p, i) => {
+    if (report.people.length > 1) lines.push(`# Jugador ${i + 1}`, '')
+    lines.push(p.headline, '', ...p.extras, '')
+    if (p.focus) lines.push('## Tu foco', ...findingMd(p.focus))
+    if (p.polish.length) lines.push('## Para después', ...p.polish.flatMap(findingMd))
+    if (p.good.length) lines.push('## Lo que ya haces bien', ...p.good.map((f) => `- **${f.title}.** ${f.seen}`), '')
+    if (p.unmeasured.length) lines.push('## Lo que no pudimos ver', ...p.unmeasured.map((u) => `- **${u.label}.** ${u.text}`), '')
+  })
+  if (report.tips.length) lines.push('## Para grabar mejor', ...report.tips.map((t) => `- ${t}`), '')
+  return lines.join('\n')
 }

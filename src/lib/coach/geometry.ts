@@ -100,26 +100,6 @@ export function width(pose: Pose, part: 'shoulder' | 'hip' | 'ankle' | 'knee'): 
 }
 
 /**
- * Cuánto se ve el cuerpo de frente: ancho de hombros entre largo del tronco.
- * De frente o de espaldas ronda 0,9; de perfil los hombros casi se superponen y baja de 0,4.
- */
-export function frontalRatio(pose: Pose): number | null {
-  const w = width(pose, 'shoulder')
-  const torso = torsoLength(pose)
-  return w !== null && torso ? w / torso : null
-}
-
-export type View = 'side' | 'oblique' | 'front'
-
-/** Umbrales de vista sobre `frontalRatio`. «front» incluye de espaldas. */
-export const VIEW_SIDE_MAX = 0.4
-export const VIEW_FRONT_MIN = 0.7
-
-export function classifyView(ratio: number): View {
-  return ratio < VIEW_SIDE_MAX ? 'side' : ratio > VIEW_FRONT_MIN ? 'front' : 'oblique'
-}
-
-/**
  * Hacia dónde mira la persona en la imagen: +1 a la derecha, −1 a la izquierda,
  * 0 si mira a la cámara, está de espaldas o no se puede saber.
  */

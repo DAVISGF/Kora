@@ -5,16 +5,20 @@
 
 import { JOINTS, type Joint, type Pose, type PoseFrame, type PoseSeries, type WindowReason } from '../types'
 
-/** Proporciones del cuerpo respecto a la estatura (Winter, 2009). */
+/**
+ * Proporciones del cuerpo respecto a la estatura, tal como las devuelve el modelo
+ * de pose en personas reales: los puntos de hombros y caderas van en el centro de
+ * la articulación, así que quedan más juntos que el ancho real del cuerpo.
+ */
 const K = {
-  torso: 0.288,
-  thigh: 0.245,
-  shank: 0.246,
+  torso: 0.265,
+  thigh: 0.228,
+  shank: 0.238,
   ankle: 0.039,
-  upperArm: 0.186,
+  upperArm: 0.152,
   forearm: 0.146,
-  halfShoulders: 0.1295,
-  halfHips: 0.0955,
+  halfShoulders: 0.0795,
+  halfHips: 0.05,
   neckToNose: 0.107,
   noseForward: 0.045,
   eyeUp: 0.016,
@@ -22,6 +26,11 @@ const K = {
   halfEars: 0.04,
   earBack: 0.045,
 }
+
+/** Tronco + muslo + pierna de la figura, como fracción de su estatura. */
+export const TRUNK_LEG = K.torso + K.thigh + K.shank
+/** Largo del tronco de la figura, como fracción de su estatura. */
+export const TORSO = K.torso
 
 export interface Limb {
   /** Pierna: flexión de cadera (muslo hacia delante +, hacia atrás −). Brazo: elevación (0 colgando, 180 arriba). */
@@ -46,6 +55,8 @@ export interface FigureSpec {
   yaw?: number
   /** Hacia dónde mira en la imagen cuando yaw = 0: 1 derecha, −1 izquierda */
   dir?: 1 | -1
+  /** Separación de los pies: 1 = debajo de las caderas, 2 = el doble de abiertos */
+  spread?: number
 }
 
 const rad = (d: number) => (d * Math.PI) / 180
@@ -74,12 +85,15 @@ export function figure(spec: FigureSpec): Pose {
   const put = (name: Joint, x: number, y: number, z: number) => {
     pts[name] = [x, y, z]
   }
+  const spread = spec.spread ?? 1
+  const kneeZ = K.halfHips * (1 + (spread - 1) / 2)
+  const ankleZ = K.halfHips * spread
   put('left_hip', 0, hipY, K.halfHips)
   put('right_hip', 0, hipY, -K.halfHips)
-  put('left_knee', L.knee[0], hipY + L.knee[1], K.halfHips)
-  put('right_knee', R.knee[0], hipY + R.knee[1], -K.halfHips)
-  put('left_ankle', L.ankle[0], hipY + L.ankle[1], K.halfHips)
-  put('right_ankle', R.ankle[0], hipY + R.ankle[1], -K.halfHips)
+  put('left_knee', L.knee[0], hipY + L.knee[1], kneeZ)
+  put('right_knee', R.knee[0], hipY + R.knee[1], -kneeZ)
+  put('left_ankle', L.ankle[0], hipY + L.ankle[1], ankleZ)
+  put('right_ankle', R.ankle[0], hipY + R.ankle[1], -ankleZ)
 
   // Tronco y cabeza, inclinados `lean` hacia delante.
   const le = rad(spec.lean)

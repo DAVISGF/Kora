@@ -6,14 +6,16 @@
 import { center, dist, joint, MIN_CONF, pt, SIDES, torsoLength } from './geometry'
 import { JOINTS, type Joint, type Pose, type PoseFrame, type PoseSeries, type Pt } from './types'
 
-/** Suma de tronco, muslo y pierna como fracción de la estatura (Winter, 2009). */
-const TRUNK_LEG_FRACTION = 0.779
+/** Suma de tronco, muslo y pierna como fracción de la estatura, con los puntos que da el modelo de pose. */
+const TRUNK_LEG_FRACTION = 0.73
 /** Un punto que se aparta más de esto (en estaturas) de sus dos vecinos, que sí coinciden entre sí, es un fallo del modelo. */
 const SPIKE_HEIGHTS = 0.12
 /** Los vecinos solo sirven de referencia si están cerca en el tiempo. */
 const NEIGHBOR_MAX_S = 0.26
 /** Hueco máximo que se rellena interpolando. */
 const FILL_MAX_S = 0.22
+/** Franja junto al borde del video, como fracción de su lado menor, donde un punto no es de fiar. */
+const EDGE_FRACTION = 0.012
 
 function percentile(values: number[], q: number): number | null {
   if (!values.length) return null
@@ -57,10 +59,14 @@ export function cleanSeries(series: PoseSeries): PoseSeries {
   const src = series.frames
   const stature = estimateStature(src) ?? 1
   const frames: PoseFrame[] = src.map((f) => ({ ...f, pose: {} as Pose }))
+  // Un punto pegado al borde del video suele ser una parte del cuerpo que se salió del cuadro:
+  // el modelo la coloca en el borde, pero no está ahí.
+  const edge = EDGE_FRACTION * Math.min(series.width, series.height)
+  const inFrame = (p: Pt | null) => (p && p.x >= edge && p.y >= edge && p.x <= series.width - edge && p.y <= series.height - edge ? p : null)
 
   for (const name of JOINTS) {
-    // 1. Solo los puntos vistos con confianza.
-    const pts: (Pt | null)[] = src.map((f) => pt(f.pose, name))
+    // 1. Solo los puntos vistos con confianza y dentro del cuadro.
+    const pts: (Pt | null)[] = src.map((f) => inFrame(pt(f.pose, name)))
 
     // 2. Saltos: el punto se aparta de sus vecinos, que entre sí coinciden.
     for (let i = 1; i + 1 < pts.length; i++) {

@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward, Upload } from 'lucide-react'
 import { Biomech, Compare, Heatmap, ImageHeatmap, KpiGrid, PerfBars } from '../components/Charts'
+import { STATUS_COLOR } from '../components/CoachViews'
 import { DiagSummary } from '../components/Diag'
 import PersonModal from '../components/PersonModal'
 import type { LayerState } from '../components/Scene'
 import Viewer, { CAMERAS, type Orbit, type ViewId } from '../components/Viewer'
 import { btnGhost, btnPrimary, card, input, SampleBadge, Segmented } from '../components/ui'
 import { EVENT_COLOR, trendColor, type EvCode, type GameEvent, type SportData } from '../data/sports'
+import type { CoachReport, Finding } from '../lib/coach/types'
 import { analysisReportMd, eventsCsv } from '../lib/report'
 import { useStore, type Clip } from '../lib/store'
 import { usePlayback } from '../lib/usePlayback'
@@ -51,7 +53,7 @@ function AnalysisView() {
   const legend: [EvCode, string][] = hasVideo ? (videoAnalysis?.legend ?? []) : data.legend
   const anchor = hasVideo ? 0 : data.events[2].pct
 
-  const pb = usePlayback(startSecs > 0 ? Math.min(100, (startSecs / data.secs) * 100) : anchor)
+  const pb = usePlayback(startSecs > 0 && !hasVideo ? Math.min(100, (startSecs / data.secs) * 100) : anchor)
   const { pos, playing, speed, seek } = pb
   const time = (pct: number) => fmtTime((secs * pct) / 100)
 
@@ -70,6 +72,14 @@ function AnalysisView() {
   useEffect(() => {
     if (!video?.playable) setMeta(null)
   }, [video])
+
+  // Con un video real, el instante del enlace (?t=) solo se puede aplicar cuando se conoce su duración.
+  const jumped = useRef(false)
+  useEffect(() => {
+    if (!hasVideo || !meta?.secs || !(startSecs > 0) || jumped.current) return
+    jumped.current = true
+    seek(Math.min(100, (startSecs / meta.secs) * 100))
+  }, [hasVideo, meta, startSecs, seek])
 
   const vision = useVision(pb.videoRef, hasVideo, pos)
 
@@ -644,7 +654,7 @@ function AnalysisView() {
         <aside aria-label="Panel de análisis" className="flex min-w-0 flex-[1_1_380px] flex-col gap-4 border-l border-line bg-inset p-5">
           {hasVideo && (
             <p className="m-0 rounded-lg border border-dashed border-line-strong px-3 py-2 text-xs text-mute">
-              De este video salen el mapa de calor y la medición de pose. La comparativa, los rangos ideales y los diagnósticos del AI Coach siguen siendo de ejemplo.
+              De este video salen el mapa de calor, la medición de pose y el AI Coach. La comparativa y los rangos ideales siguen siendo de ejemplo.
             </p>
           )}
           <Segmented
@@ -677,22 +687,74 @@ function AnalysisView() {
                   Ver todo
                 </Link>
               </div>
-              {data.diags.map((d) => (
-                <DiagSummary
-                  key={d.id}
-                  d={d}
-                  time={time(data.events[d.ev].pct)}
-                  onJump={() => {
-                    seek(data.events[d.ev].pct)
-                    setLayers((l) => ({ ...l, skel: true }))
-                  }}
-                />
-              ))}
+              {hasVideo ? (
+                <CoachSummary report={videoAnalysis?.coach ?? null} analyzed={!!videoAnalysis} error={videoAnalysis?.coachError} onSeek={(t) => seek((t / secs) * 100)} />
+              ) : (
+                data.diags.map((d) => (
+                  <DiagSummary
+                    key={d.id}
+                    d={d}
+                    time={time(data.events[d.ev].pct)}
+                    onJump={() => {
+                      seek(data.events[d.ev].pct)
+                      setLayers((l) => ({ ...l, skel: true }))
+                    }}
+                  />
+                ))
+              )}
             </div>
           )}
         </aside>
       </div>
     </div>
+  )
+}
+
+/** Resumen del Coach real en el panel del visor: el foco de cada jugador y lo que hace bien. */
+function CoachSummary({ report, analyzed, error, onSeek }: { report: CoachReport | null; analyzed: boolean; error?: string; onSeek: (t: number) => void }) {
+  if (!report) {
+    return (
+      <p className="m-0 rounded-lg border border-dashed border-line-strong px-3 py-3 text-[13px] text-mute">
+        {analyzed ? (error ?? 'No se pudo medir la técnica en este video.') : 'Pulsa «Analizar video» y aquí verás qué mejorar primero, medido en tu video.'}
+      </p>
+    )
+  }
+  if (!report.people.length) {
+    return <p className="m-0 rounded-lg border border-dashed border-line-strong px-3 py-3 text-[13px] text-mute">{report.empty ?? 'No reconocimos ningún gesto para analizar en este video.'}</p>
+  }
+  return (
+    <>
+      {report.people.map((p, i) => {
+        const shown = [p.focus, ...p.polish].filter((f): f is Finding => !!f)
+        return (
+          <article key={p.personId} className={cx(card, 'flex flex-col gap-2.5 p-4')}>
+            {report.people.length > 1 && <span className="text-xs font-semibold tracking-wider text-mute uppercase">Jugador {i + 1}</span>}
+            <p className="m-0 text-[15px] leading-snug font-semibold">{p.headline}</p>
+            {shown.map((f) => (
+              <div key={f.id} className="flex items-start justify-between gap-3 border-t border-line pt-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-[13px] font-semibold" style={{ color: STATUS_COLOR[f.status] }}>
+                    {f.title}
+                  </span>
+                  <span className="text-[13px] text-mute">{f.seen}</span>
+                </div>
+                {f.evidence && (
+                  <button type="button" onClick={() => onSeek(f.evidence!.t)} className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border border-line-strong bg-raised px-2.5 font-mono text-xs text-ink" aria-label={`Ver en el video, ${fmtTime(f.evidence.t)}`}>
+                    <Play size={12} fill="currentColor" aria-hidden="true" />
+                    {fmtTime(f.evidence.t)}
+                  </button>
+                )}
+              </div>
+            ))}
+            {p.good.length > 0 && (
+              <p className="m-0 border-t border-line pt-2.5 text-[13px] text-mute">
+                <b className="font-semibold text-ok">Bien hecho:</b> {p.good.map((f) => f.label.toLowerCase()).join(', ')}.
+              </p>
+            )}
+          </article>
+        )
+      })}
+    </>
   )
 }
 

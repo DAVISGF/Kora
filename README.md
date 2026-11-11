@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-`npm run build` compila a `dist/` y `npm run typecheck` revisa los tipos.
+`npm run build` compila a `dist/`, `npm run typecheck` revisa los tipos y `npm test` ejecuta las pruebas.
 
 ## Pantallas
 
@@ -17,7 +17,7 @@ npm run dev
 |---|---|
 | `/` | Subir video: deporte, video local o URL, otros ángulos de cámara y demos |
 | `/analisis` | Video: visor con capas, cámaras, vista 3D, cámara lenta, recortes, KPIs y panel lateral |
-| `/coach` | Diagnósticos técnicos y ejercicios correctivos |
+| `/coach` | AI Coach: la técnica de cada jugador medida en su video, con foto, clave y ejercicio |
 | `/jugadas` | Informe de jugadas clave y ejercicios |
 | `/historial` | Análisis guardados |
 | `/recortes` | Recortes guardados, con su análisis y exportación |
@@ -33,11 +33,46 @@ y consulta a Roboflow. Configura la variable de entorno en el servidor:
 | Variable | Uso |
 |---|---|
 | `ROBOFLOW_API_KEY` | Clave de la API de Roboflow. Obligatoria. |
-| `ROBOFLOW_POSE_MODEL` | Modelo de pose. Por defecto `coco-pose-detection/1`. |
+| `ROBOFLOW_POSE_MODEL` | Modelo de pose. Por defecto `coco-pose-detection/3` (YOLOv8m-pose, 17 puntos). |
+| `ROBOFLOW_POSE_MODEL_PRECISE` | Modelo de pose para los recortes del AI Coach. Por defecto, el mismo. |
 | `ROBOFLOW_OBJECT_MODEL` | Modelo de objetos para el balón. Por defecto `coco/25`. |
 
 En local, copia `.env.example` a `.env`; `npm run dev` sirve `/api/vision` con el mismo código.
 Cada análisis consume inferencias de tu cuenta de Roboflow: una por fotograma, dos si se detecta el balón.
+El AI Coach añade hasta 320 recortes por análisis, cada uno con pose y balón.
+
+## AI Coach: la técnica medida en el video
+
+Al pulsar **Analizar video** (o **Analizar mi técnica** en `/coach`), después de la pasada general se mide de cerca
+a las dos personas que más se ven (`src/lib/coach/`):
+
+1. **Captura densa** (`windows.ts`, `densePose.ts`, `pipeline.ts`). En cada instante se recorta a la persona, se amplía
+   y se le mide la pose, de 10 a 24 veces por segundo según lo que dure el video. En fútbol, alrededor de cada
+   posible golpeo se vuelven a mirar todos los fotogramas.
+2. **Gestos** (`actions/`). Reconoce tiros de baloncesto (las manos suben del pecho a por encima de la cabeza),
+   golpeos de fútbol (el balón sale disparado desde un pie que barre mientras el otro aguanta) y carreras
+   (los pies se alternan).
+3. **Chequeos** (`checks.ts`). En cada gesto mide lo que miraría un entrenador: en el tiro, base, piernas, codo,
+   brazo, final y cuerpo; en el golpeo, pie y rodilla de apoyo, cuerpo y final; en la carrera, brazos, rodillas y tronco.
+4. **Informe** (`report.ts`, `content.ts`). Un solo foco con su foto, por qué importa, una clave y un ejercicio;
+   hasta dos cosas para después; lo que ya hace bien; y lo que no se pudo ver, con el consejo para grabarlo.
+
+Reglas que sigue para no decir de más:
+
+- Cada medida declara desde dónde se ve. De frente no se puede ver doblarse el codo ni la rodilla: las piernas se
+  deducen de lo que bajan las caderas (vale desde cualquier ángulo) y lo demás se da por «no se pudo ver».
+- Un fallo visto una sola vez nunca es «para corregir»: queda como «algo para probar», con seguridad baja.
+- Los umbrales dejan una franja ancha sin comentario: la pose sobre video tiene varios grados de error.
+- Con otro jugador encima, o sin ver el balón cuando hay más gente, el gesto no se califica.
+- No hay diagnósticos médicos ni comentarios sobre el cuerpo.
+
+Los textos están escritos para jugadores desde los 12 años. Las pruebas (`readability.test.ts`) miden cada uno con
+el índice de Szigriszt-Pazos y exigen el nivel «bastante fácil» de la escala INFLESZ, frases de 16 palabras como
+mucho y nada de jerga.
+
+Límites conocidos: no reconoce todavía entradas al aro, pases, regates ni defensa; el seguimiento puede confundir
+a dos jugadores que se cruzan; un video a cámara lenta se mide igual, pero sin cadencia de carrera; y de un
+golpeo visto de frente solo se mide el final.
 
 ### Modo continuo: tres métodos
 
@@ -64,6 +99,7 @@ Real, con la clave configurada:
   la altura de cada persona (1,75 m) como escala y no descuentan el movimiento de la cámara.
 - **Ficha de persona**: al pulsar una fila de «Rendimiento por jugador» se abre una ventana con su foto recortada
   del video, sus estadísticas, su velocidad en el tiempo, los eventos detectados y la pose de ese fotograma.
+- **AI Coach**: tiros, golpeos y carreras de los protagonistas, medidos en el video (ver arriba).
 
 Funciona en el navegador, sin backend:
 
@@ -75,7 +111,7 @@ Funciona en el navegador, sin backend:
 
 Está simulado con datos de ejemplo (`src/data/sports.ts`):
 
-- Todo lo de las demostraciones sin video propio, y siempre la comparativa, los diagnósticos del AI Coach y los informes de Jugadas IA.
+- Todo lo de las demostraciones sin video propio, y siempre la comparativa, los rangos de la pestaña Biomecánica y los informes de Jugadas IA.
 - Pérdidas, goles y canastas: no se detectan en el video real.
 - La identificación de dorsales y equipos, y las zonas: el modelo solo detecta personas, pose y balón.
 - El procesamiento de la ingesta y la reproducción de YouTube, HLS o RTMP.

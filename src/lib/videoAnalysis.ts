@@ -3,18 +3,20 @@
 // las distancias se estiman tomando la altura de cada persona como regla.
 
 import type { EvCode, GameEvent, Kpi, SportId } from '../data/sports'
+import { runCoach } from './coach/pipeline'
+import type { CoachReport } from './coach/types'
 import { comma, fmtTime } from './util'
 import { disposeVideo, loadVideo, seekTo } from './videoFrames'
 import { grabFrame, jointAngles, MIN_KEYPOINT_CONF, requestVision, trackPersons, VisionError, type Box, type JointAngle, type Person } from './vision'
 
 /** Versión del formato de `VideoAnalysis`; al cambiarla se descartan los análisis guardados antiguos. */
-export const ANALYSIS_VERSION = 2
+export const ANALYSIS_VERSION = 3
 
 export const SAMPLE_STEP = 0.5 // segundos entre fotogramas
 export const MAX_FRAMES = 160 // 80 s de video por análisis
 const COARSE_STEP = 1 // primera pasada; la segunda rellena a SAMPLE_STEP donde hay movimiento
 const CONCURRENCY = 8
-const FRAME_WIDTH = 480
+const FRAME_WIDTH = 640
 const RETRIES = 2
 /** Desplazamiento entre dos muestras, en alturas de cuerpo, a partir del cual se afina el tramo */
 const REFINE_MOVE_HEIGHTS = 0.8
@@ -23,6 +25,8 @@ const SPRINT_MS = 5 // m/s estimados (mismo valor que SPRINT_THRESHOLD)
 const MAX_PLAUSIBLE_MS = 11 // por encima se asume un cambio de identidad
 const BALL_FAST_MS = 12
 const REFRACTORY_S = 2
+/** Tiempo que se recuerda a una persona que dejó de detectarse, para no darle otra identidad al reaparecer */
+const TRACK_MEMORY_S = 2.6
 
 export interface AnalyzedFrame {
   t: number
@@ -83,6 +87,10 @@ export interface VideoAnalysis {
   people: PersonStats[]
   /** Posición de los pies de cada detección, normalizada a la imagen */
   points: { x: number; y: number }[]
+  /** Informe de técnica del AI Coach; null si esa parte del análisis falló */
+  coach: CoachReport | null
+  /** Por qué no hay informe de técnica, si falló */
+  coachError?: string
 }
 
 /** Avance del análisis: primero el video completo, después la técnica de cada jugador. */
@@ -206,10 +214,15 @@ export async function runVideoAnalysis(
   // El seguimiento se hace al final, en orden temporal.
   const frames = [...byTime.values()].sort((x, y) => x.t - y.t)
   const nextId = { current: 1 }
-  let prev: Person[] = []
+  const lastSeen = new Map<number, { t: number; p: Person }>()
+  let prevT = -Infinity
   for (const f of frames) {
-    f.persons = trackPersons(prev, f.persons, nextId, aspect)
-    prev = f.persons
+    // Quien falta en una muestra suelta (un desenfoque, un cruce) conserva su identidad si reaparece pronto y cerca.
+    const recent = [...lastSeen.values()].filter((o) => f.t - o.t <= TRACK_MEMORY_S)
+    const stale = new Set(recent.filter((o) => o.t < prevT).map((o) => o.p.id))
+    f.persons = trackPersons(recent.map((o) => o.p), f.persons, nextId, aspect, stale)
+    for (const p of f.persons) lastSeen.set(p.id, { t: f.t, p })
+    prevT = f.t
   }
   const analysis = summarize(frames, sport, aspect, opts.ball, start)
 
@@ -223,7 +236,22 @@ export async function runVideoAnalysis(
       person.thumb = null
     }
   }
+
+  // Técnica: se mide de cerca a los protagonistas. Si falla, el resto del análisis se conserva.
+  if (!opts.signal.aborted) {
+    try {
+      const coarse = { sport, start, end: Math.min(duration, analysis.end + COARSE_STEP), frames: analysis.frames, events: analysis.events }
+      analysis.coach = await runCoach(video, coarse, {
+        signal: opts.signal,
+        onProgress: (n, of) => opts.onProgress({ stage: 'tecnica', done: n, total: of }),
+      })
+      for (const p of analysis.coach.people) p.thumb = analysis.people.find((x) => x.id === p.personId)?.thumb ?? null
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') analysis.coachError = e instanceof VisionError ? e.message : 'No se pudo medir la técnica en este video.'
+    }
+  }
   dispose()
+  if (opts.signal.aborted) throw new DOMException('Análisis cancelado', 'AbortError')
   return analysis
 }
 
@@ -419,6 +447,7 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
     perf: ranked.map(([id, m]) => [`#${id}`, Math.round((m / best) * 100), Math.round(m)]),
     people: people.sort((a, b) => b.meters - a.meters || b.samples - a.samples).slice(0, MAX_PEOPLE),
     points,
+    coach: null,
   }
 }
 
