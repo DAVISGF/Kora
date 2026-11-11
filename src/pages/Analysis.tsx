@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward } from 'lucide-react'
+import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward, Upload } from 'lucide-react'
 import { Biomech, Compare, Heatmap, ImageHeatmap, KpiGrid, PerfBars } from '../components/Charts'
 import { DiagSummary } from '../components/Diag'
 import PersonModal from '../components/PersonModal'
 import type { LayerState } from '../components/Scene'
 import Viewer, { CAMERAS, type Orbit, type ViewId } from '../components/Viewer'
-import { btnGhost, btnPrimary, card, input, Segmented } from '../components/ui'
+import { btnGhost, btnPrimary, card, input, SampleBadge, Segmented } from '../components/ui'
 import { EVENT_COLOR, trendColor, type EvCode, type GameEvent, type SportData } from '../data/sports'
 import { analysisReportMd, eventsCsv } from '../lib/report'
 import { useStore, type Clip } from '../lib/store'
@@ -14,7 +14,7 @@ import { usePlayback } from '../lib/usePlayback'
 import { useVision, type VisionStatus } from '../lib/useVision'
 import { jointAngles, mainPerson, VisionError, type FrameAnalysis } from '../lib/vision'
 import { frameAt, MAX_FRAMES, runVideoAnalysis, SAMPLE_STEP, toGameEvents } from '../lib/videoAnalysis'
-import { comma, copyText, cx, downloadText, fmtShort, fmtTime, slug } from '../lib/util'
+import { comma, copyText, cx, downloadText, fmtShort, fmtTime, isVideoFile, slug } from '../lib/util'
 
 const LAYERS: { id: keyof LayerState; label: string; color: string }[] = [
   { id: 'track', label: 'Tracking', color: '#CBF62E' },
@@ -31,13 +31,13 @@ const pill = 'inline-flex h-11 items-center gap-2 rounded-lg border bg-raised px
 const square = 'inline-flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-raised text-ink'
 
 export default function Analysis() {
-  const { sport } = useStore()
-  // Al cambiar de deporte se reinicia el visor completo.
-  return <AnalysisView key={sport} />
+  const { sport, video } = useStore()
+  // Al cambiar de deporte o de video se reinicia el visor completo.
+  return <AnalysisView key={`${sport}:${video?.key ?? 'demo'}`} />
 }
 
 function AnalysisView() {
-  const { data, sport, video, cams, setCams, addClip, videoAnalysis, setVideoAnalysis } = useStore()
+  const { data, sport, video, restoring, setVideo, loadVideoFile, cams, setCams, addClip, videoAnalysis, setVideoAnalysis } = useStore()
   const hasVideo = !!video?.playable
   const [params] = useSearchParams()
   const startSecs = Number(params.get('t'))
@@ -153,6 +153,105 @@ function AnalysisView() {
     setSaved(true)
   }
 
+  // Origen del visor: tu video o la demostración dibujada.
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [demoSeen, setDemoSeen] = useState(() => {
+    try {
+      return sessionStorage.getItem('kora.demoSeen') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [fileError, setFileError] = useState('')
+  const [dragging, setDragging] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [playError, setPlayError] = useState(false)
+
+  const pickFile = () => fileRef.current?.click()
+  const takeFile = (file: File | undefined) => {
+    if (!file) return
+    if (!isVideoFile(file)) {
+      setFileError('Ese archivo no es un video. Prueba con MP4, MOV o WebM.')
+      return
+    }
+    setFileError('')
+    loadVideoFile(file)
+  }
+  const dismissDemo = () => {
+    setDemoSeen(true)
+    try {
+      sessionStorage.setItem('kora.demoSeen', '1')
+    } catch {
+      /* sin almacenamiento de sesión: el aviso volverá a salir */
+    }
+  }
+
+  const linkOnly = !!video && !video.playable
+  const notice = restoring
+    ? null
+    : playError
+      ? {
+          title: 'Tu navegador no puede reproducir este video',
+          text: 'Suele pasar con videos grabados en HEVC, como algunos de iPhone. Conviértelo a MP4 (H.264) o ábrelo en otro navegador.',
+          action: 'Subir otro video',
+        }
+      : linkOnly
+        ? {
+            title: 'Este enlace no se puede reproducir aquí',
+            text: 'Los enlaces de YouTube, Vimeo o de transmisiones necesitan un servicio que aún no está conectado. Sube el archivo de video para analizarlo.',
+            action: 'Subir un archivo',
+          }
+        : !hasVideo && !demoSeen
+          ? {
+              title: 'Aquí va tu video',
+              text: 'Lo que ves detrás es un ejemplo dibujado, no un video real. Sube el tuyo para analizarlo.',
+              action: 'Subir mi video',
+            }
+          : null
+
+  const overlay = restoring ? (
+    <div role="status" className="absolute inset-0 z-10 flex items-center justify-center bg-bg/85 font-mono text-sm">
+      Recuperando tu video…
+    </div>
+  ) : notice ? (
+    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-bg/85 p-4">
+      <div className="flex max-w-[460px] flex-col items-center gap-2 text-center sm:gap-3">
+        {!hasVideo && !linkOnly && (
+          <span className="hidden sm:inline">
+            <SampleBadge>Demostración</SampleBadge>
+          </span>
+        )}
+        <h2 className="m-0 text-lg font-bold sm:text-2xl">{notice.title}</h2>
+        {/* En pantallas pequeñas el visor es bajo: la explicación va encima, fuera del video. */}
+        <p className="m-0 hidden text-sm text-[#AEB7C0] sm:block">{notice.text}</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button type="button" className={btnPrimary} onClick={pickFile}>
+            <Upload size={18} aria-hidden="true" />
+            {notice.action}
+          </button>
+          {!playError && (
+            <button
+              type="button"
+              className={btnGhost}
+              onClick={() => {
+                if (linkOnly) setVideo(null)
+                dismissDemo()
+              }}
+            >
+              Ver la demostración
+            </button>
+          )}
+        </div>
+        <span className="hidden text-xs text-mute sm:block">También puedes arrastrar el archivo hasta aquí.</span>
+        {fileError && (
+          <p role="alert" className="m-0 text-[13px] text-danger">
+            {fileError}
+          </p>
+        )}
+      </div>
+    </div>
+  ) : null
+
   const availableViews = [
     ...CAMERAS.slice(0, cams).map((c) => ({ id: c.id, label: `${c.name} · ${c.pos}` })),
     { id: '3d' as ViewId, label: 'Vista 3D' },
@@ -190,7 +289,74 @@ function AnalysisView() {
 
       <div className="flex flex-wrap">
         <main className="flex min-w-0 flex-[999_1_600px] flex-col gap-4 p-5">
-          <section aria-label="Visor de video" className={`${card} overflow-hidden`}>
+          <section
+            aria-label="Visor de video"
+            className={cx(card, 'overflow-hidden', dragging && 'border-lime')}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragging(true)
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragging(false)
+              takeFile(e.dataTransfer.files[0])
+            }}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept="video/*,.mkv,.mov"
+              className="sr-only"
+              aria-label="Archivo de video"
+              onChange={(e) => {
+                takeFile(e.target.files?.[0])
+                e.target.value = ''
+              }}
+            />
+            {hasVideo ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+                <span className="text-xs tracking-wider text-mute uppercase">Tu video</span>
+                <span className="min-w-0 flex-[1_1_160px] truncate font-mono text-[13px]">{video?.name}</span>
+                <button type="button" onClick={pickFile} className="h-11 rounded-lg border border-line-strong bg-raised px-3 text-[13px] font-semibold text-ink">
+                  Cambiar video
+                </button>
+                {confirmRemove ? (
+                  <button
+                    type="button"
+                    onClick={() => setVideo(null)}
+                    onBlur={() => setConfirmRemove(false)}
+                    className="h-11 rounded-lg border border-danger bg-raised px-3 text-[13px] font-semibold text-danger"
+                  >
+                    Confirmar: se borra su análisis
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmRemove(true)}
+                    title="Quita el video de este navegador y vuelve a la demostración"
+                    className="h-11 rounded-lg border border-line-strong bg-raised px-3 text-[13px] font-semibold text-ink"
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3 border-b border-line bg-inset px-4 py-2">
+                <SampleBadge>Demostración</SampleBadge>
+                <span className="min-w-0 flex-[1_1_200px] text-[13px] text-mute">Esto es un ejemplo dibujado, no tu video.</span>
+                <button type="button" onClick={pickFile} className={btnPrimary}>
+                  <Upload size={18} aria-hidden="true" />
+                  Subir mi video
+                </button>
+              </div>
+            )}
+            {notice && (playError || linkOnly) && <p className="m-0 border-b border-line px-4 py-2 text-[13px] text-[#AEB7C0] sm:hidden">{notice.text}</p>}
+            {fileError && !notice && (
+              <p role="alert" className="m-0 border-b border-line px-4 py-2 text-[13px] text-danger">
+                {fileError}
+              </p>
+            )}
             <Viewer
               data={data}
               layers={layers}
@@ -205,6 +371,8 @@ function AnalysisView() {
               real={shownAnalysis}
               videoSize={meta}
               visionStatus={scan ? `ANALIZANDO VIDEO · ${scan.done}/${scan.total || '…'}` : !vision.analysis && stored ? `IA REAL · ${stored.persons.length} personas · guardado` : visionLabel(vision.status, vision.analysis)}
+              onVideoError={() => setPlayError(true)}
+              overlay={overlay}
             />
 
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">

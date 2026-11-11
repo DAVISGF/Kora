@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { VideoAnalysis } from './videoAnalysis'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ANALYSIS_VERSION, type VideoAnalysis } from './videoAnalysis'
+import { clearAnalysis, clearStoredVideo, getAnalysis, getVideo, putAnalysis, putVideo } from './videoStore'
 import { SPORTS, type Phase, type Severity, type SportData, type SportId } from '../data/sports'
 
 export interface Clip {
@@ -38,6 +39,8 @@ export interface VideoSource {
   name: string
   /** true si es un archivo local reproducible en el visor */
   playable: boolean
+  /** Huella del origen; cambia cuando cambia el video */
+  key: string
 }
 
 interface Store {
@@ -45,7 +48,12 @@ interface Store {
   data: SportData
   setSport: (s: SportId) => void
   video: VideoSource | null
+  /** true mientras se recupera el último video guardado en este navegador */
+  restoring: boolean
+  /** Para enlaces externos o para quitar el video (null) */
   setVideo: (v: VideoSource | null) => void
+  /** Carga un archivo local y lo guarda en este navegador para que sobreviva a una recarga */
+  loadVideoFile: (file: File) => void
   /** KPIs y eventos medidos en el video cargado; se pierde al cambiar de video */
   videoAnalysis: VideoAnalysis | null
   setVideoAnalysis: (v: VideoAnalysis | null) => void
@@ -133,10 +141,64 @@ const Ctx = createContext<Store | null>(null)
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [sport, setSport] = usePersisted<SportId>('kora.sport', 'basket')
   const [video, setVideoState] = useState<VideoSource | null>(null)
-  const [videoAnalysis, setVideoAnalysis] = useState<VideoAnalysis | null>(null)
-  const setVideo = useCallback((v: VideoSource | null) => {
+  const [videoAnalysis, setVideoAnalysisState] = useState<VideoAnalysis | null>(null)
+  const [restoring, setRestoring] = useState(true)
+  const current = useRef<VideoSource | null>(null)
+
+  const replaceVideo = useCallback((v: VideoSource | null) => {
+    const old = current.current
+    if (old?.url.startsWith('blob:') && old.url !== v?.url) URL.revokeObjectURL(old.url)
+    current.current = v
     setVideoState(v)
-    setVideoAnalysis(null)
+    setVideoAnalysisState(null)
+  }, [])
+
+  const setVideo = useCallback(
+    (v: VideoSource | null) => {
+      replaceVideo(v)
+      // Un enlace no se guarda como archivo; quitar el video borra también lo guardado.
+      void clearStoredVideo()
+    },
+    [replaceVideo],
+  )
+
+  const loadVideoFile = useCallback(
+    (file: File) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}`
+      replaceVideo({ url: URL.createObjectURL(file), name: file.name, playable: true, key })
+      void clearAnalysis()
+      void putVideo({ blob: file, name: file.name, key })
+    },
+    [replaceVideo],
+  )
+
+  const setVideoAnalysis = useCallback((a: VideoAnalysis | null) => {
+    setVideoAnalysisState(a)
+    const key = current.current?.key
+    if (a && key) void putAnalysis({ version: ANALYSIS_VERSION, videoKey: key, analysis: a })
+    else void clearAnalysis()
+  }, [])
+
+  // Al abrir la app se recupera el último video y, si sigue siendo válido, su análisis.
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const stored = await getVideo()
+      if (!alive) return
+      if (stored && !current.current) {
+        const v: VideoSource = { url: URL.createObjectURL(stored.blob), name: stored.name, playable: true, key: stored.key }
+        current.current = v
+        setVideoState(v)
+        const saved = await getAnalysis()
+        if (alive && current.current === v && saved?.videoKey === stored.key && saved.version === ANALYSIS_VERSION) {
+          setVideoAnalysisState(saved.analysis as VideoAnalysis)
+        }
+      }
+      if (alive) setRestoring(false)
+    })()
+    return () => {
+      alive = false
+    }
   }, [])
   const [cams, setCams] = useState(1)
   const [clips, setClips] = usePersisted<Clip[]>('kora.clips.v1', SEED_CLIPS)
@@ -147,8 +209,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addHistory = useCallback((h: HistoryItem) => setHistory((prev) => [h, ...prev]), [setHistory])
 
   const value = useMemo<Store>(
-    () => ({ sport, data: SPORTS[sport], setSport, video, setVideo, videoAnalysis, setVideoAnalysis, cams, setCams, clips, addClip, removeClip, history, addHistory }),
-    [sport, setSport, video, setVideo, videoAnalysis, cams, clips, addClip, removeClip, history, addHistory],
+    () => ({ sport, data: SPORTS[sport], setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, cams, setCams, clips, addClip, removeClip, history, addHistory }),
+    [sport, setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, cams, clips, addClip, removeClip, history, addHistory],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

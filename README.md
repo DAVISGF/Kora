@@ -15,8 +15,8 @@ npm run dev
 
 | Ruta | Pantalla |
 |---|---|
-| `/` | Ingesta: deporte, video local o URL, otros ángulos de cámara y demos |
-| `/analisis` | Visor con capas, cámaras, vista 3D, cámara lenta, recortes, KPIs y panel lateral |
+| `/` | Subir video: deporte, video local o URL, otros ángulos de cámara y demos |
+| `/analisis` | Video: visor con capas, cámaras, vista 3D, cámara lenta, recortes, KPIs y panel lateral |
 | `/coach` | Diagnósticos técnicos y ejercicios correctivos |
 | `/jugadas` | Informe de jugadas clave y ejercicios |
 | `/historial` | Análisis guardados |
@@ -67,7 +67,9 @@ Real, con la clave configurada:
 
 Funciona en el navegador, sin backend:
 
-- Reproducción del video local que subas, con velocidad, cámara lenta y saltos.
+- Reproducción del video local que subas, con velocidad, cámara lenta y saltos. El video y su análisis se guardan
+  en IndexedDB, dentro del navegador, así que siguen ahí al recargar; «Quitar» los borra.
+- Sin video, el visor muestra una demostración dibujada marcada como tal, con el botón para subir el tuyo.
 - Recortes e historial, guardados en `localStorage`.
 - Descarga de informes (Markdown) y datos (CSV), y copia de enlaces.
 

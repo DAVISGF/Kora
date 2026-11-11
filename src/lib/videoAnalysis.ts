@@ -6,6 +6,9 @@ import type { EvCode, GameEvent, Kpi, SportId } from '../data/sports'
 import { comma, fmtTime } from './util'
 import { grabFrame, jointAngles, MIN_KEYPOINT_CONF, requestVision, trackPersons, VisionError, type Box, type JointAngle, type Person } from './vision'
 
+/** Versión del formato de `VideoAnalysis`; al cambiarla se descartan los análisis guardados antiguos. */
+export const ANALYSIS_VERSION = 1
+
 export const SAMPLE_STEP = 0.5 // segundos entre fotogramas
 export const MAX_FRAMES = 160 // 80 s de video por análisis
 const COARSE_STEP = 1 // primera pasada; la segunda rellena a SAMPLE_STEP donde hay movimiento

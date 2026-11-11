@@ -4,7 +4,7 @@ import { ArrowRight, MonitorPlay, Plus, Upload } from 'lucide-react'
 import { btnDashed, btnGhost, btnPrimary, card, input, SampleBadge, Segmented } from '../components/ui'
 import { SPORT_LIST } from '../data/sports'
 import { useStore } from '../lib/store'
-import { cx } from '../lib/util'
+import { cx, isVideoFile } from '../lib/util'
 
 type Source = 'file' | 'url'
 
@@ -43,7 +43,7 @@ function StepTitle({ n, children }: { n: string; children: string }) {
 }
 
 export default function Ingest() {
-  const { sport, setSport, data, video, setVideo, setCams } = useStore()
+  const { sport, setSport, data, setVideo, loadVideoFile, setCams } = useStore()
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
   const [source, setSource] = useState<Source>('file')
@@ -58,11 +58,10 @@ export default function Ingest() {
 
   const takeFile = (f: File | undefined) => {
     if (!f) return
-    if (!f.type.startsWith('video/')) return
-    if (video?.url.startsWith('blob:')) URL.revokeObjectURL(video.url)
+    if (!isVideoFile(f)) return
     setFile(f)
     setDemo(null)
-    setVideo({ url: URL.createObjectURL(f), name: f.name, playable: true })
+    loadVideoFile(f)
   }
 
   const onDrop = (e: DragEvent) => {
@@ -77,7 +76,7 @@ export default function Ingest() {
     if (info.ok) {
       setDemo(null)
       setFile(null)
-      setVideo({ url: url.trim(), name: url.trim(), playable: info.playable })
+      setVideo({ url: url.trim(), name: url.trim(), playable: info.playable, key: url.trim() })
     }
   }
 
@@ -180,7 +179,7 @@ export default function Ingest() {
               <button type="button" className={btnPrimary} onClick={() => fileRef.current?.click()}>
                 {file ? 'Cambiar archivo' : 'Seleccionar archivo'}
               </button>
-              <div className="text-xs text-mute">El video se queda en tu navegador. Al analizar con IA solo se envían fotogramas sueltos al servicio de visión.</div>
+              <div className="text-xs text-mute">El video se guarda solo en este navegador, para que siga ahí cuando vuelvas. Al analizar con IA se envían fotogramas sueltos al servicio de visión.</div>
             </div>
           ) : (
             <div className="flex flex-col gap-3">

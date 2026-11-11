@@ -7,8 +7,8 @@ import { cx } from '../lib/util'
 import { btnPrimary, SampleBadge, Segmented } from './ui'
 
 const NAV = [
-  { to: '/', label: 'Ingesta', icon: Upload },
-  { to: '/analisis', label: 'Análisis', icon: MonitorPlay },
+  { to: '/', label: 'Subir video', icon: Upload },
+  { to: '/analisis', label: 'Video', icon: MonitorPlay },
   { to: '/coach', label: 'AI Coach', icon: Sparkles },
   { to: '/jugadas', label: 'Jugadas IA', icon: ListVideo },
   { to: '/historial', label: 'Historial', icon: History },
@@ -40,9 +40,17 @@ export default function AppShell() {
           onChange={setSport}
           options={SPORT_LIST.map((s) => ({ id: s.id, label: s.label }))}
         />
-        <span className="min-w-0 truncate text-sm">{video?.name ?? data.match}</span>
-        {!video && <span className="rounded-md border border-line px-2 py-1 font-mono text-xs">1080p</span>}
-        <SampleBadge />
+        {video ? (
+          <span className="min-w-0 truncate text-sm">
+            <span className="text-mute">Tu video: </span>
+            {video.name}
+          </span>
+        ) : (
+          <>
+            <SampleBadge>Demostración</SampleBadge>
+            <span className="min-w-0 truncate text-sm text-mute">{data.match}</span>
+          </>
+        )}
         <div className="grow" />
         <Link to="/" className={btnPrimary}>
           <Plus size={18} strokeWidth={2.4} aria-hidden="true" />

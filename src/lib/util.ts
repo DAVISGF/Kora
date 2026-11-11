@@ -41,6 +41,11 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
+const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|ogv)$/i
+
+/** Algunos navegadores no asignan tipo MIME a .mov o .mkv: también vale la extensión. */
+export const isVideoFile = (file: File) => file.type.startsWith('video/') || VIDEO_EXT.test(file.name)
+
 export const slug = (s: string) =>
   s
     .toLowerCase()

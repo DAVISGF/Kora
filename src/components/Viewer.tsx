@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import type { SportData } from '../data/sports'
 import type { VideoSource } from '../lib/store'
 import { comma } from '../lib/util'
@@ -38,6 +38,10 @@ interface ViewerProps {
   videoSize: { width: number; height: number } | null
   /** Estado del servicio de visión, visible sobre el video */
   visionStatus: string
+  /** El navegador no pudo decodificar el video (formato o códec no admitido) */
+  onVideoError?: () => void
+  /** Aviso a pantalla completa del visor: demostración, recuperación del video, errores */
+  overlay?: ReactNode
 }
 
 const AMP: [number, number][] = [
@@ -50,7 +54,7 @@ const AMP: [number, number][] = [
 ]
 const BASE_SPEED = [0.8, 1.2, 6.4, 4.1, 5.2, 3.0]
 
-export default function Viewer({ data, layers, tick, view, orbit, cams, timecode, video, videoRef, onMeta, real, videoSize, visionStatus }: ViewerProps) {
+export default function Viewer({ data, layers, tick, view, orbit, cams, timecode, video, videoRef, onMeta, real, videoSize, visionStatus, onVideoError, overlay }: ViewerProps) {
   const ph = tick * 0.3
   const is3d = view === '3d'
   const cam = CAMERAS.find((c) => c.id === view) ?? CAMERAS[0]
@@ -75,6 +79,7 @@ export default function Viewer({ data, layers, tick, view, orbit, cams, timecode
             muted
             playsInline
             className="absolute inset-0 h-full w-full object-contain"
+            onError={onVideoError}
             onLoadedMetadata={(e) => onMeta({ secs: e.currentTarget.duration, width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })}
           />
         )}
@@ -132,6 +137,7 @@ export default function Viewer({ data, layers, tick, view, orbit, cams, timecode
           {visionStatus}
         </div>
       )}
+      {overlay}
     </div>
   )
 }
