@@ -840,6 +840,10 @@ interface TimelineProps {
 
 const clampPct = (p: number) => Math.min(100, Math.max(0, p))
 
+const tip = 'pointer-events-none absolute -top-6 -translate-x-1/2 rounded px-1.5 py-0.5 font-mono text-[11px] font-bold whitespace-nowrap'
+/** Centra la etiqueta sobre su punto sin dejar que se salga por los bordes de la tarjeta. */
+const tipLeft = (pct: number, edge = 8) => `clamp(${edge}px, ${pct}%, calc(100% - ${edge}px))`
+
 function Timeline({ sport, events, legend, pos, evIdx, time, secs, onSeek, range, minGap, onRange }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<number | null>(null)
@@ -932,7 +936,11 @@ function Timeline({ sport, events, legend, pos, evIdx, time, secs, onSeek, range
               aria-valuenow={Math.round(range[i])}
               aria-valuetext={time(range[i])}
               title="Arrastra para ajustar el recorte"
-              className="absolute top-0 flex h-11 w-5 -translate-x-1/2 cursor-ew-resize touch-none items-center justify-center rounded-[5px] border-0 bg-lime p-0"
+              className={cx(
+                'absolute top-0 flex h-11 w-5 cursor-ew-resize touch-none items-center justify-center border-0 bg-lime p-0',
+                // Cada asa queda por fuera del tramo, así no se tapan cuando el recorte es corto.
+                i === 0 ? '-translate-x-full rounded-l-[5px]' : 'rounded-r-[5px]',
+              )}
               style={{ left: `${range[i]}%` }}
               onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
               onPointerMove={(e) => {
@@ -946,16 +954,15 @@ function Timeline({ sport, events, legend, pos, evIdx, time, secs, onSeek, range
               }}
             >
               <span className="h-4 w-0.5 rounded-full bg-lime-ink" />
-              <span className="pointer-events-none absolute -top-6 rounded bg-lime px-1.5 py-0.5 font-mono text-[11px] font-bold whitespace-nowrap text-lime-ink">
-                {time(range[i])}
-              </span>
             </button>
           ))}
+        {range && (
+          <span className={cx(tip, 'bg-lime text-lime-ink')} style={{ left: tipLeft((range[0] + range[1]) / 2, 50) }}>
+            {time(range[0])} – {time(range[1])}
+          </span>
+        )}
         {hover !== null && !range && (
-          <span
-            className="pointer-events-none absolute -top-6 -translate-x-1/2 rounded bg-ink px-1.5 py-0.5 font-mono text-[11px] font-bold whitespace-nowrap text-bg"
-            style={{ left: `${hover}%` }}
-          >
+          <span className={cx(tip, 'bg-ink text-bg')} style={{ left: tipLeft(hover) }}>
             {time(hover)}
           </span>
         )}
