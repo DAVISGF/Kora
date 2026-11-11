@@ -45,16 +45,16 @@ const MAX_WIDTH = 640
 let canvas: HTMLCanvasElement | null = null
 
 /** Captura el fotograma actual del video como JPEG en base64 (sin el prefijo data:). */
-export function grabFrame(video: HTMLVideoElement): string | null {
+export function grabFrame(video: HTMLVideoElement, maxWidth = MAX_WIDTH, quality = 0.72): string | null {
   if (!video.videoWidth || !video.videoHeight) return null
-  const scale = Math.min(1, MAX_WIDTH / video.videoWidth)
+  const scale = Math.min(1, maxWidth / video.videoWidth)
   canvas ??= document.createElement('canvas')
   canvas.width = Math.round(video.videoWidth * scale)
   canvas.height = Math.round(video.videoHeight * scale)
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.72).split(',')[1] ?? null
+  return canvas.toDataURL('image/jpeg', quality).split(',')[1] ?? null
 }
 
 export interface RawFrame {

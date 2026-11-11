@@ -44,7 +44,7 @@ Cada análisis consume inferencias de tu cuenta de Roboflow: una por fotograma, 
 Real, con la clave configurada:
 
 - Cajas de personas, esqueleto, balón y ángulos del fotograma analizado, sobre tu propio video.
-- **Analizar video**: muestrea un fotograma cada 0,5 s (hasta 80 s por análisis) y calcula KPIs y eventos de ese video:
+- **Analizar video**: muestrea un fotograma por segundo, y uno intermedio donde hay movimiento (hasta 80 s por análisis), y calcula KPIs y eventos de ese video:
   personas en cuadro, velocidad máxima, distancia, sprints, balón detectado, mapa de calor sobre la imagen y,
   en baloncesto, posibles tiros (ambas manos sobre la cabeza). Velocidades y distancias son estimaciones: usan
   la altura de cada persona (1,75 m) como escala y no descuentan el movimiento de la cámara.

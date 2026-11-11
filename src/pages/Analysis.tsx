@@ -468,8 +468,8 @@ function AnalysisView() {
             <div className="rounded-xl border border-dashed border-line-strong px-5 py-10 text-center text-mute">
               Aún no hay KPIs ni eventos de este video. Pulsa <b className="text-ink">Analizar video</b>:{' '}
               {secs > windowSecs
-                ? `se analizan ${windowSecs} s a partir del punto actual, con un fotograma cada ${String(SAMPLE_STEP).replace('.', ',')} s.`
-                : `se analiza completo, con un fotograma cada ${String(SAMPLE_STEP).replace('.', ',')} s.`}
+                ? `se analizan ${windowSecs} s a partir del punto actual, con un fotograma por segundo y uno más donde hay movimiento.`
+                : 'se analiza completo, con un fotograma por segundo y uno más donde hay movimiento.'}
             </div>
           )}
         </main>

@@ -8,7 +8,12 @@ import { grabFrame, MIN_KEYPOINT_CONF, requestVision, trackPersons, VisionError,
 
 export const SAMPLE_STEP = 0.5 // segundos entre fotogramas
 export const MAX_FRAMES = 160 // 80 s de video por análisis
-const CONCURRENCY = 3
+const COARSE_STEP = 1 // primera pasada; la segunda rellena a SAMPLE_STEP donde hay movimiento
+const CONCURRENCY = 8
+const FRAME_WIDTH = 480
+const RETRIES = 2
+/** Desplazamiento entre dos muestras, en alturas de cuerpo, a partir del cual se afina el tramo */
+const REFINE_MOVE_HEIGHTS = 0.8
 const PERSON_HEIGHT_M = 1.75
 const SPRINT_MS = 5 // m/s estimados
 const MAX_PLAUSIBLE_MS = 11 // por encima se asume un cambio de identidad
@@ -19,6 +24,8 @@ export interface AnalyzedFrame {
   t: number
   persons: Person[]
   ball: { box: Box; conf: number } | null
+  /** Si en este fotograma se buscó el balón */
+  ballChecked: boolean
 }
 
 export interface RealEvent {
@@ -81,7 +88,52 @@ function loadVideo(url: string): Promise<HTMLVideoElement> {
   })
 }
 
-/** Analiza hasta 80 s de video a partir de `startSec`. */
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Reintenta los fallos pasajeros (límite de peticiones, cortes de red). */
+async function requestWithRetry(image: string, ball: boolean, signal: AbortSignal) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await requestVision(image, ball, signal)
+    } catch (e) {
+      const transient = e instanceof VisionError && e.code === 'failed'
+      if (!transient || attempt >= RETRIES || signal.aborted) throw e
+      await wait(600 * (attempt + 1))
+    }
+  }
+}
+
+/** ¿Se mueve alguien lo bastante entre dos muestras como para mirar el fotograma intermedio? */
+function needsRefine(a: AnalyzedFrame, b: AnalyzedFrame, aspect: number, sport: SportId): boolean {
+  if (a.persons.length !== b.persons.length) return true
+  for (const p of a.persons) {
+    let best = Infinity
+    for (const q of b.persons) {
+      const dx = (q.box.x + q.box.w / 2 - p.box.x - p.box.w / 2) * aspect
+      const dy = q.box.y + q.box.h - p.box.y - p.box.h
+      best = Math.min(best, Math.hypot(dx, dy) / ((p.box.h + q.box.h) / 2 || 1))
+    }
+    if (best > REFINE_MOVE_HEIGHTS) return true
+  }
+  if (sport === 'basket') {
+    // Un brazo levantado puede ser el inicio de un tiro: se afina para no perderlo.
+    for (const p of [...a.persons, ...b.persons]) {
+      const kp = new Map(p.keypoints.filter((k) => k.conf >= MIN_KEYPOINT_CONF).map((k) => [k.name, k]))
+      const raised = (wrist: string, shoulder: string) => {
+        const w = kp.get(wrist)
+        const s = kp.get(shoulder)
+        return !!w && !!s && w.y < s.y
+      }
+      if (raised('left_wrist', 'left_shoulder') || raised('right_wrist', 'right_shoulder')) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Analiza hasta 80 s de video a partir de `startSec`, en dos pasadas: una
+ * muestra por segundo y, después, las intermedias solo donde hay movimiento.
+ */
 export async function runVideoAnalysis(
   url: string,
   sport: SportId,
@@ -90,44 +142,63 @@ export async function runVideoAnalysis(
   const video = await loadVideo(url)
   const duration = video.duration
   const aspect = video.videoWidth / video.videoHeight || 16 / 9
-  const start = Math.max(0, Math.min(opts.startSec, Math.max(0, duration - SAMPLE_STEP)))
-  const times: number[] = []
-  for (let t = start; t < duration && times.length < MAX_FRAMES; t += SAMPLE_STEP) times.push(t)
-  if (times.length < 2) throw new VisionError('failed', 'El video es demasiado corto para analizarlo.')
+  const start = Math.max(0, Math.min(opts.startSec, Math.max(0, duration - COARSE_STEP)))
+  const limit = Math.min(duration, start + MAX_FRAMES * SAMPLE_STEP)
+  const coarse: number[] = []
+  for (let t = start; t < limit; t += COARSE_STEP) coarse.push(t)
+  if (coarse.length < 2) throw new VisionError('failed', 'El video es demasiado corto para analizarlo.')
 
-  const results: (AnalyzedFrame | null)[] = times.map(() => null)
+  const byTime = new Map<number, AnalyzedFrame>()
   let done = 0
+  let total = coarse.length
   let failure: unknown = null
-  const pending = new Set<Promise<void>>()
 
-  for (let i = 0; i < times.length; i++) {
-    if (failure || opts.signal.aborted) break
-    // La captura es secuencial (un solo <video>); las peticiones van en paralelo.
-    await seekTo(video, times[i])
-    const image = grabFrame(video)
-    if (!image) continue
-    const job = requestVision(image, opts.ball, opts.signal)
-      .then((raw) => {
-        results[i] = { t: times[i], persons: raw.persons.map((p, n) => ({ ...p, id: n + 1 })), ball: raw.ball }
-      })
-      .catch((e) => {
-        failure ??= e
-      })
-      .finally(() => {
-        pending.delete(job)
-        opts.onProgress({ done: ++done, total: times.length })
-      })
-    pending.add(job)
-    if (pending.size >= CONCURRENCY) await Promise.race(pending)
+  const pass = async (times: number[], ball: boolean) => {
+    const pending = new Set<Promise<void>>()
+    for (const t of times) {
+      if (failure || opts.signal.aborted) break
+      // La captura es secuencial (un solo <video>); las peticiones van en paralelo.
+      await seekTo(video, t)
+      const image = grabFrame(video, FRAME_WIDTH, 0.7)
+      if (!image) continue
+      const job = requestWithRetry(image, ball, opts.signal)
+        .then((raw) => {
+          byTime.set(t, { t, persons: raw.persons.map((p, n) => ({ ...p, id: n + 1 })), ball: raw.ball, ballChecked: ball })
+        })
+        .catch((e) => {
+          failure ??= e
+        })
+        .finally(() => {
+          pending.delete(job)
+          opts.onProgress({ done: ++done, total })
+        })
+      pending.add(job)
+      if (pending.size >= CONCURRENCY) await Promise.race(pending)
+    }
+    await Promise.all(pending)
   }
-  await Promise.all(pending)
+
+  // El balón solo se busca en la primera pasada: basta una muestra por segundo.
+  await pass(coarse, opts.ball)
+
+  if (!failure && !opts.signal.aborted) {
+    const mid: number[] = []
+    for (let i = 0; i + 1 < coarse.length; i++) {
+      const a = byTime.get(coarse[i])
+      const b = byTime.get(coarse[i + 1])
+      if (a && b && needsRefine(a, b, aspect, sport)) mid.push(coarse[i] + SAMPLE_STEP)
+    }
+    total += mid.length
+    await pass(mid, false)
+  }
+
   video.removeAttribute('src')
   video.load()
   if (opts.signal.aborted) throw new DOMException('Análisis cancelado', 'AbortError')
   if (failure) throw failure
 
   // El seguimiento se hace al final, en orden temporal.
-  const frames = results.filter((f): f is AnalyzedFrame => f !== null)
+  const frames = [...byTime.values()].sort((x, y) => x.t - y.t)
   const nextId = { current: 1 }
   let prev: Person[] = []
   for (const f of frames) {
@@ -174,7 +245,7 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
       if (i > 0) {
         const before = obs[i - 1]
         const dt = cur.t - before.t
-        if (dt > 0 && dt <= SAMPLE_STEP * 2.5) {
+        if (dt > 0 && dt <= COARSE_STEP * 1.25) {
           const a = feet(before.p.box)
           const b = feet(cur.p.box)
           const d = (Math.hypot((b.x - a.x) * aspect, b.y - a.y) / height) * PERSON_HEIGHT_M
@@ -211,18 +282,22 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
   // Balón rápido: desplazamiento entre muestras consecutivas, con la altura mediana de las personas como escala.
   const scale = median(frames.flatMap((f) => f.persons.map((p) => p.box.h)))
   let ballFrames = 0
+  let ballChecked = 0
   let lastBallEvent = -Infinity
-  for (let i = 0; i < frames.length; i++) {
-    const cur = frames[i]
+  let lastBall: AnalyzedFrame | null = null
+  for (const cur of frames) {
+    if (cur.ballChecked) ballChecked++
     if (!cur.ball) continue
     ballFrames++
-    const before = frames[i - 1]
+    const before = lastBall
+    lastBall = cur
     if (!before?.ball || !scale) continue
     const dt = cur.t - before.t
+    if (dt <= 0 || dt > COARSE_STEP * 1.25) continue
     const a = before.ball.box
     const b = cur.ball.box
     const d = (Math.hypot((b.x + b.w / 2 - a.x - a.w / 2) * aspect, b.y + b.h / 2 - a.y - a.h / 2) / scale) * PERSON_HEIGHT_M
-    if (dt > 0 && d / dt >= BALL_FAST_MS && cur.t - lastBallEvent >= REFRACTORY_S) {
+    if (d / dt >= BALL_FAST_MS && cur.t - lastBallEvent >= REFRACTORY_S) {
       lastBallEvent = cur.t
       events.push({
         t: cur.t,
@@ -248,17 +323,17 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
     { label: 'Sprints', value: String(sprints), delta: `Umbral ${SPRINT_MS} m/s estimados`, trend: 0 },
     {
       label: 'Balón detectado',
-      value: withBall ? `${Math.round((ballFrames / frames.length) * 100)} %` : '—',
-      delta: withBall ? `${ballFrames} de ${frames.length} fotogramas` : 'Activa "Detectar balón"',
+      value: withBall && ballChecked ? `${Math.round((ballFrames / ballChecked) * 100)} %` : '—',
+      delta: withBall ? `${ballFrames} de ${ballChecked} fotogramas revisados` : 'Activa "Detectar balón"',
       trend: 0,
     },
-    { label: 'Fotogramas analizados', value: String(frames.length), delta: `${fmtTime(start)} – ${fmtTime(end)} · cada ${comma(SAMPLE_STEP)} s`, trend: 0 },
+    { label: 'Fotogramas analizados', value: String(frames.length), delta: `${fmtTime(start)} – ${fmtTime(end)} · cada ${comma(SAMPLE_STEP)}–${COARSE_STEP} s`, trend: 0 },
   ]
 
   return {
     start,
     end,
-    step: SAMPLE_STEP,
+    step: COARSE_STEP,
     frames,
     withBall,
     kpis,
