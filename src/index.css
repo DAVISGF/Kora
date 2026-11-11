@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Inter, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-bg: #090d10;
+  --color-card: #10151b;
+  --color-inset: #0c1115;
+  --color-raised: #1c222a;
+  --color-line: #20272f;
+  --color-line-strong: #2e3742;
+  --color-ink: #e7ecf0;
+  --color-mute: #8a95a0;
+  --color-lime: #cbf62e;
+  --color-lime-ink: #0f1405;
+  --color-basket: #fe7902;
+  --color-futbol: #36da90;
+  --color-info: #30c0f8;
+  --color-danger: #ff5065;
+  --color-warn: #ffc237;
+  --color-ok: #36da90;
+  --color-zone: #a78bfa;
+}
+
+@theme inline {
+  /* Color del deporte activo; lo fija AppShell en la raíz. */
+  --color-accent: var(--accent, #fe7902);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+input::placeholder {
+  color: var(--color-mute);
+}
+
+input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--color-lime);
+}
