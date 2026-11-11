@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import type { VideoAnalysis } from './videoAnalysis'
 import { SPORTS, type Phase, type Severity, type SportData, type SportId } from '../data/sports'
 
 export interface Clip {
@@ -45,6 +46,9 @@ interface Store {
   setSport: (s: SportId) => void
   video: VideoSource | null
   setVideo: (v: VideoSource | null) => void
+  /** KPIs y eventos medidos en el video cargado; se pierde al cambiar de video */
+  videoAnalysis: VideoAnalysis | null
+  setVideoAnalysis: (v: VideoAnalysis | null) => void
   cams: number
   setCams: (n: number) => void
   clips: Clip[]
@@ -128,7 +132,12 @@ const Ctx = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [sport, setSport] = usePersisted<SportId>('kora.sport', 'basket')
-  const [video, setVideo] = useState<VideoSource | null>(null)
+  const [video, setVideoState] = useState<VideoSource | null>(null)
+  const [videoAnalysis, setVideoAnalysis] = useState<VideoAnalysis | null>(null)
+  const setVideo = useCallback((v: VideoSource | null) => {
+    setVideoState(v)
+    setVideoAnalysis(null)
+  }, [])
   const [cams, setCams] = useState(1)
   const [clips, setClips] = usePersisted<Clip[]>('kora.clips.v1', SEED_CLIPS)
   const [history, setHistory] = usePersisted<HistoryItem[]>('kora.history.v1', SEED_HISTORY)
@@ -138,8 +147,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addHistory = useCallback((h: HistoryItem) => setHistory((prev) => [h, ...prev]), [setHistory])
 
   const value = useMemo<Store>(
-    () => ({ sport, data: SPORTS[sport], setSport, video, setVideo, cams, setCams, clips, addClip, removeClip, history, addHistory }),
-    [sport, setSport, video, cams, clips, addClip, removeClip, history, addHistory],
+    () => ({ sport, data: SPORTS[sport], setSport, video, setVideo, videoAnalysis, setVideoAnalysis, cams, setCams, clips, addClip, removeClip, history, addHistory }),
+    [sport, setSport, video, setVideo, videoAnalysis, cams, clips, addClip, removeClip, history, addHistory],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

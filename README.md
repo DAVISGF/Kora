@@ -44,6 +44,10 @@ Cada análisis consume inferencias de tu cuenta de Roboflow: una por fotograma, 
 Real, con la clave configurada:
 
 - Cajas de personas, esqueleto, balón y ángulos del fotograma analizado, sobre tu propio video.
+- **Analizar video**: muestrea un fotograma cada 0,5 s (hasta 80 s por análisis) y calcula KPIs y eventos de ese video:
+  personas en cuadro, velocidad máxima, distancia, sprints, balón detectado, mapa de calor sobre la imagen y,
+  en baloncesto, posibles tiros (ambas manos sobre la cabeza). Velocidades y distancias son estimaciones: usan
+  la altura de cada persona (1,75 m) como escala y no descuentan el movimiento de la cámara.
 
 Funciona en el navegador, sin backend:
 
@@ -53,7 +57,8 @@ Funciona en el navegador, sin backend:
 
 Está simulado con datos de ejemplo (`src/data/sports.ts`):
 
-- Los eventos, KPIs, mapa de calor, diagnósticos e informes, y las capas del fotograma ilustrado de demostración.
+- Todo lo de las demostraciones sin video propio, y siempre la comparativa, los diagnósticos del AI Coach y los informes de Jugadas IA.
+- Pérdidas, goles y canastas: no se detectan en el video real.
 - La identificación de dorsales y equipos, y las zonas: el modelo solo detecta personas, pose y balón.
 - El procesamiento de la ingesta y la reproducción de YouTube, HLS o RTMP.
 - Las cámaras 2 y 3 (reencuadran el mismo fotograma) y la vista 3D.

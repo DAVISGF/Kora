@@ -6,7 +6,7 @@ import { card, Segmented } from './ui'
 
 const LIME = '#CBF62E'
 
-export function KpiGrid({ data }: { data: SportData }) {
+export function KpiGrid({ data }: { data: Pick<SportData, 'kpis'> }) {
   return (
     <section aria-label="Indicadores clave" className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
       {data.kpis.map((k) => (
@@ -22,20 +22,24 @@ export function KpiGrid({ data }: { data: SportData }) {
   )
 }
 
-export function PerfBars({ data }: { data: SportData }) {
+export function PerfBars({ data, values, unit = '%', who = 'Jugador' }: { data: Pick<SportData, 'perf' | 'perfMetric'>; values?: number[]; unit?: string; who?: string }) {
   return (
     <section className={`${card} flex flex-col gap-3 p-4`}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="m-0 text-[15px] font-semibold">Rendimiento por jugador</h2>
         <span className="text-xs text-mute">{data.perfMetric}</span>
       </div>
-      {data.perf.map(([player, pct]) => (
+      {data.perf.map(([player, pct], i) => (
         <div key={player} className="grid grid-cols-[96px_minmax(0,1fr)_56px] items-center gap-3">
-          <span className="text-[13px]">Jugador {player}</span>
+          <span className="text-[13px]">
+            {who} {player}
+          </span>
           <div className="h-3.5 rounded bg-raised">
             <div className="h-3.5 rounded bg-lime" style={{ width: `${pct}%` }} />
           </div>
-          <span className="text-right font-mono text-[13px]">{pct} %</span>
+          <span className="text-right font-mono text-[13px]">
+            {values?.[i] ?? pct} {unit}
+          </span>
         </div>
       ))}
     </section>
@@ -43,6 +47,37 @@ export function PerfBars({ data }: { data: SportData }) {
 }
 
 type HeatMode = 'dots' | 'grid'
+
+/** Posiciones reales de las personas sobre la imagen del video (sin proyección a la cancha). */
+export function ImageHeatmap({ points }: { points: { x: number; y: number }[] }) {
+  // Con muchas muestras se dibuja una de cada n para no saturar.
+  const stride = Math.max(1, Math.ceil(points.length / 400))
+  const shown = points.filter((_, i) => i % stride === 0)
+  return (
+    <section className={`${card} flex flex-col gap-3 border-lime p-4`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="m-0 text-[15px] font-semibold">Mapa de calor real</h2>
+        <span className="text-xs text-mute">{points.length} posiciones</span>
+      </div>
+      <div className="relative aspect-video overflow-hidden rounded-md border border-line bg-bg">
+        <div aria-hidden="true" className="absolute inset-0">
+          {shown.map((p, i) => (
+            <div
+              key={i}
+              className="absolute aspect-square w-[7%] -translate-x-1/2 -translate-y-1/2 rounded-full mix-blend-screen"
+              style={{
+                left: `${(p.x * 100).toFixed(1)}%`,
+                top: `${(p.y * 100).toFixed(1)}%`,
+                background: 'radial-gradient(circle, rgba(255,194,55,0.42) 0%, rgba(254,121,2,0.26) 40%, rgba(255,80,101,0) 70%)',
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <span className="text-xs text-mute">Dónde pisan las personas dentro del encuadre. No está proyectado a la cancha: haría falta calibrar la cámara.</span>
+    </section>
+  )
+}
 
 export function Heatmap({ data }: { data: SportData }) {
   const [mode, setMode] = useState<HeatMode>('dots')

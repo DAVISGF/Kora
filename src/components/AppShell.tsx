@@ -41,7 +41,7 @@ export default function AppShell() {
           options={SPORT_LIST.map((s) => ({ id: s.id, label: s.label }))}
         />
         <span className="min-w-0 truncate text-sm">{video?.name ?? data.match}</span>
-        <span className="rounded-md border border-line px-2 py-1 font-mono text-xs">1080p</span>
+        {!video && <span className="rounded-md border border-line px-2 py-1 font-mono text-xs">1080p</span>}
         <SampleBadge />
         <div className="grow" />
         <Link to="/" className={btnPrimary}>

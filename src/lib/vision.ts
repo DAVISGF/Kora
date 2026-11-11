@@ -57,27 +57,39 @@ export function grabFrame(video: HTMLVideoElement): string | null {
   return canvas.toDataURL('image/jpeg', 0.72).split(',')[1] ?? null
 }
 
-export async function analyzeFrame(video: HTMLVideoElement, opts: { ball: boolean }, signal?: AbortSignal): Promise<FrameAnalysis> {
-  const image = grabFrame(video)
-  if (!image) throw new VisionError('failed', 'No se pudo leer el fotograma del video.')
-  const started = performance.now()
+export interface RawFrame {
+  persons: Omit<Person, 'id'>[]
+  ball: FrameAnalysis['ball']
+  model: string
+}
+
+/** Envía un fotograma ya capturado al servicio de visión. */
+export async function requestVision(image: string, ball: boolean, signal?: AbortSignal): Promise<RawFrame> {
   let res: Response
   try {
     res = await fetch('/api/vision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image, ball: opts.ball }),
+      body: JSON.stringify({ image, ball }),
       signal,
     })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
     throw new VisionError('failed', 'No se pudo contactar con el servicio de visión.')
   }
-  const body = (await res.json().catch(() => null)) as (Omit<FrameAnalysis, 'ms' | 'persons'> & { persons: Omit<Person, 'id'>[]; error?: string }) | null
+  const body = (await res.json().catch(() => null)) as (RawFrame & { error?: string }) | null
   if (!res.ok || !body) {
     const code: VisionErrorCode = res.status === 501 ? 'not_configured' : res.status === 401 || res.status === 403 ? 'unauthorized' : 'failed'
     throw new VisionError(code, body?.error ?? `El servicio de visión respondió ${res.status}.`)
   }
+  return body
+}
+
+export async function analyzeFrame(video: HTMLVideoElement, opts: { ball: boolean }, signal?: AbortSignal): Promise<FrameAnalysis> {
+  const image = grabFrame(video)
+  if (!image) throw new VisionError('failed', 'No se pudo leer el fotograma del video.')
+  const started = performance.now()
+  const body = await requestVision(image, opts.ball, signal)
   return {
     persons: body.persons.map((p, i) => ({ ...p, id: i + 1 })),
     ball: body.ball,
@@ -86,26 +98,29 @@ export async function analyzeFrame(video: HTMLVideoElement, opts: { ball: boolea
   }
 }
 
-function iou(a: Box, b: Box): number {
-  const x1 = Math.max(a.x, b.x)
-  const y1 = Math.max(a.y, b.y)
-  const x2 = Math.min(a.x + a.w, b.x + b.w)
-  const y2 = Math.min(a.y + a.h, b.y + b.h)
-  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1)
-  const union = a.w * a.h + b.w * b.h - inter
-  return union > 0 ? inter / union : 0
-}
+/** Salto máximo entre muestras, en alturas de cuerpo (~4,5 m con 1,75 m por persona). */
+const MAX_JUMP_HEIGHTS = 2.6
 
 /**
  * Seguimiento simple entre fotogramas: cada persona hereda el identificador de
- * la detección anterior con la que más se solapa; las nuevas reciben uno nuevo.
+ * la detección anterior más cercana, siempre que el salto sea verosímil; las
+ * nuevas reciben uno nuevo. Se mide en alturas de cuerpo para que no dependa
+ * de lo lejos que esté de la cámara.
  */
-export function trackPersons(prev: Person[], next: Person[], nextId: { current: number }): Person[] {
+export function trackPersons(prev: Person[], next: Person[], nextId: { current: number }, aspect = 16 / 9): Person[] {
   const free = new Set(prev.map((p) => p.id))
   const pairs = next
-    .flatMap((n, ni) => prev.map((p) => ({ ni, id: p.id, score: iou(p.box, n.box) })))
-    .filter((m) => m.score > 0.25)
-    .sort((a, b) => b.score - a.score)
+    .flatMap((n, ni) =>
+      prev.map((p) => {
+        const dx = (n.box.x + n.box.w / 2 - p.box.x - p.box.w / 2) * aspect
+        const dy = n.box.y + n.box.h - p.box.y - p.box.h
+        const height = (n.box.h + p.box.h) / 2 || 1
+        const sizeRatio = Math.max(n.box.h, p.box.h) / (Math.min(n.box.h, p.box.h) || 1e-6)
+        return { ni, id: p.id, cost: Math.hypot(dx, dy) / height, sizeRatio }
+      }),
+    )
+    .filter((m) => m.cost <= MAX_JUMP_HEIGHTS && m.sizeRatio <= 2)
+    .sort((a, b) => a.cost - b.cost)
   const assigned = new Map<number, number>()
   for (const m of pairs) {
     if (assigned.has(m.ni) || !free.has(m.id)) continue

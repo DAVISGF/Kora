@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward } from 'lucide-react'
-import { Biomech, Compare, Heatmap, KpiGrid, PerfBars } from '../components/Charts'
+import { Biomech, Compare, Heatmap, ImageHeatmap, KpiGrid, PerfBars } from '../components/Charts'
 import { DiagSummary } from '../components/Diag'
 import type { LayerState } from '../components/Scene'
 import Viewer, { CAMERAS, type Orbit, type ViewId } from '../components/Viewer'
 import { btnGhost, btnPrimary, card, input, Segmented } from '../components/ui'
-import { EVENT_COLOR, trendColor, type SportData } from '../data/sports'
+import { EVENT_COLOR, trendColor, type EvCode, type GameEvent, type SportData } from '../data/sports'
 import { analysisReportMd, eventsCsv } from '../lib/report'
 import { useStore, type Clip } from '../lib/store'
 import { usePlayback } from '../lib/usePlayback'
 import { useVision, type VisionStatus } from '../lib/useVision'
-import { jointAngles, mainPerson, type FrameAnalysis } from '../lib/vision'
+import { jointAngles, mainPerson, VisionError, type FrameAnalysis } from '../lib/vision'
+import { frameAt, MAX_FRAMES, runVideoAnalysis, SAMPLE_STEP, toGameEvents } from '../lib/videoAnalysis'
 import { comma, copyText, cx, downloadText, fmtShort, fmtTime, slug } from '../lib/util'
 
 const LAYERS: { id: keyof LayerState; label: string; color: string }[] = [
@@ -35,14 +36,21 @@ export default function Analysis() {
 }
 
 function AnalysisView() {
-  const { data, sport, video, cams, setCams, addClip } = useStore()
+  const { data, sport, video, cams, setCams, addClip, videoAnalysis, setVideoAnalysis } = useStore()
+  const hasVideo = !!video?.playable
   const [params] = useSearchParams()
   const startSecs = Number(params.get('t'))
   const [meta, setMeta] = useState<{ secs: number; width: number; height: number } | null>(null)
   const secs = meta?.secs || data.secs
-  const events = data.events
+  // Con un video real, la línea de tiempo y los KPIs solo muestran lo medido en él.
+  const events: GameEvent[] = useMemo(
+    () => (hasVideo ? (videoAnalysis ? toGameEvents(videoAnalysis, secs) : []) : data.events),
+    [hasVideo, videoAnalysis, secs, data.events],
+  )
+  const legend: [EvCode, string][] = hasVideo ? (videoAnalysis?.legend ?? []) : data.legend
+  const anchor = hasVideo ? 0 : data.events[2].pct
 
-  const pb = usePlayback(startSecs > 0 ? Math.min(100, (startSecs / data.secs) * 100) : events[2].pct)
+  const pb = usePlayback(startSecs > 0 ? Math.min(100, (startSecs / data.secs) * 100) : anchor)
   const { pos, playing, speed, seek } = pb
   const time = (pct: number) => fmtTime((secs * pct) / 100)
 
@@ -54,7 +62,7 @@ function AnalysisView() {
   const [slow, setSlow] = useState(false)
   const [phase, setPhase] = useState(2)
   const [clipOn, setClipOn] = useState(false)
-  const [range, setRange] = useState<[number, number]>([Math.max(0, events[2].pct - 0.5), Math.min(100, events[2].pct + 0.5)])
+  const [range, setRange] = useState<[number, number]>(hasVideo ? [0, 10] : [Math.max(0, anchor - 0.5), Math.min(100, anchor + 0.5)])
   const [clipName, setClipName] = useState('')
   const [saved, setSaved] = useState(false)
 
@@ -62,8 +70,34 @@ function AnalysisView() {
     if (!video?.playable) setMeta(null)
   }, [video])
 
-  const hasVideo = !!video?.playable
   const vision = useVision(pb.videoRef, hasVideo, pos)
+
+  // Análisis del video completo: KPIs y eventos reales.
+  const [scan, setScan] = useState<{ done: number; total: number } | null>(null)
+  const [scanError, setScanError] = useState('')
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  const runScan = async () => {
+    if (!video?.playable) return
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setScanError('')
+    setScan({ done: 0, total: 0 })
+    try {
+      const startSec = secs > MAX_FRAMES * SAMPLE_STEP ? (secs * pos) / 100 : 0
+      setVideoAnalysis(await runVideoAnalysis(video.url, sport, { startSec, ball: vision.ball, onProgress: setScan, signal: ctrl.signal }))
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') setScanError(e instanceof VisionError ? e.message : 'No se pudo analizar el video.')
+    } finally {
+      setScan(null)
+    }
+  }
+
+  // Fuera del análisis en vivo, el visor reproduce las detecciones guardadas del video.
+  const stored = videoAnalysis ? frameAt(videoAnalysis, (secs * pos) / 100) : null
+  const shownAnalysis: FrameAnalysis | null = vision.analysis ?? (stored ? { persons: stored.persons, ball: stored.ball, ms: 0, model: '' } : null)
+  const windowSecs = MAX_FRAMES * SAMPLE_STEP
 
   const evIdx = useMemo(() => {
     let idx = -1
@@ -77,7 +111,7 @@ function AnalysisView() {
 
   const activeLayers = LAYERS.filter((l) => layers[l.id]).map((l) => l.label)
   const inRange = events.filter((e) => e.pct >= range[0] && e.pct <= range[1])
-  const diagsIn = data.diags.filter((d) => inRange.includes(events[d.ev]))
+  const diagsIn = hasVideo ? [] : data.diags.filter((d) => inRange.includes(data.events[d.ev]))
   const clipSecs = (secs * (range[1] - range[0])) / 100
   const framePct = 100 / (secs * 30)
 
@@ -145,7 +179,9 @@ function AnalysisView() {
         </button>
       </div>
       {panel === 'share' && <SharePanel url={`${location.origin}/analisis?t=${Math.round((secs * pos) / 100)}`} />}
-      {panel === 'download' && <DownloadPanel data={data} secs={secs} />}
+      {panel === 'download' && (
+        <DownloadPanel data={hasVideo ? { ...data, match: video?.name ?? data.match, events, kpis: videoAnalysis?.kpis ?? [], diags: [] } : data} secs={secs} />
+      )}
 
       <div className="flex flex-wrap">
         <main className="flex min-w-0 flex-[999_1_600px] flex-col gap-4 p-5">
@@ -161,9 +197,9 @@ function AnalysisView() {
               video={video}
               videoRef={pb.videoRef}
               onMeta={setMeta}
-              real={vision.analysis}
+              real={shownAnalysis}
               videoSize={meta}
-              visionStatus={visionLabel(vision.status, vision.analysis)}
+              visionStatus={scan ? `ANALIZANDO VIDEO · ${scan.done}/${scan.total || '…'}` : !vision.analysis && stored ? `IA REAL · ${stored.persons.length} personas · guardado` : visionLabel(vision.status, vision.analysis)}
             />
 
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
@@ -224,6 +260,15 @@ function AnalysisView() {
                   <ScanSearch size={16} aria-hidden="true" />
                   {vision.status === 'loading' ? 'Analizando…' : 'Analizar fotograma'}
                 </button>
+                {scan ? (
+                  <button type="button" onClick={() => abortRef.current?.abort()} className={cx(pill, 'border-danger text-danger')}>
+                    Cancelar ({scan.done}/{scan.total || '…'})
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => void runScan()} className="inline-flex h-11 items-center gap-2 rounded-lg bg-lime px-3 text-[13px] font-semibold text-lime-ink">
+                    {videoAnalysis ? 'Volver a analizar el video' : 'Analizar video'}
+                  </button>
+                )}
                 <button type="button" aria-pressed={vision.live} onClick={() => vision.setLive(!vision.live)} className={cx(pill, vision.live ? 'border-ink' : 'border-line')}>
                   Análisis continuo
                 </button>
@@ -233,6 +278,11 @@ function AnalysisView() {
                 <span className="min-w-0 flex-[1_1_220px] text-right text-xs text-mute">
                   {vision.live ? 'Envía un fotograma cada 0,8 s al servicio de visión.' : 'Cada análisis envía el fotograma actual al servicio de visión.'}
                 </span>
+                {scanError && (
+                  <p role="alert" className="m-0 w-full text-[13px] text-danger">
+                    {scanError}
+                  </p>
+                )}
                 {vision.message && (
                   <p role="alert" className="m-0 w-full text-[13px] text-danger">
                     {vision.message}
@@ -287,7 +337,15 @@ function AnalysisView() {
               </div>
               <div className="min-w-0 flex-[1_1_200px] text-right text-[13px] text-mute">
                 {hasVideo ? (
-                  'Los eventos, KPIs y diagnósticos son de ejemplo: no salen de este video.'
+                  current ? (
+                    <>
+                      Evento: <span className="font-semibold text-ink">{`${current.type} · ${current.desc}`}</span>
+                    </>
+                  ) : videoAnalysis ? (
+                    'Sin eventos antes de este punto.'
+                  ) : (
+                    'Pulsa Analizar video para detectar eventos y calcular KPIs.'
+                  )
                 ) : (
                   <>
                     Evento: <span className="font-semibold text-ink">{current ? `${current.type} · ${current.desc}` : 'Sin evento'}</span>
@@ -380,14 +438,48 @@ function AnalysisView() {
               </div>
             )}
 
-            <Timeline data={data} pos={pos} evIdx={evIdx} time={time} onSeek={seek} range={clipOn ? range : null} />
+            <Timeline sport={data.id} events={events} legend={legend} pos={pos} evIdx={evIdx} time={time} onSeek={seek} range={clipOn ? range : null} />
           </section>
 
-          <KpiGrid data={data} />
-          <PerfBars data={data} />
+          {!hasVideo && (
+            <>
+              <KpiGrid data={data} />
+              <PerfBars data={data} />
+            </>
+          )}
+          {hasVideo && videoAnalysis && (
+            <>
+              <p className="m-0 text-[13px] text-mute">
+                KPIs y eventos medidos en este video, del {time((videoAnalysis.start / secs) * 100)} al {time((videoAnalysis.end / secs) * 100)}. Las distancias y
+                velocidades son estimaciones: usan la altura de cada persona (1,75 m) como escala y no descuentan el movimiento de la cámara.
+              </p>
+              <KpiGrid data={videoAnalysis} />
+              {videoAnalysis.perf.length > 0 && (
+                <PerfBars
+                  data={{ perf: videoAnalysis.perf.map(([who, pct]) => [who, pct]), perfMetric: 'Distancia estimada' }}
+                  values={videoAnalysis.perf.map((r) => r[2])}
+                  unit="m"
+                  who="Persona"
+                />
+              )}
+            </>
+          )}
+          {hasVideo && !videoAnalysis && (
+            <div className="rounded-xl border border-dashed border-line-strong px-5 py-10 text-center text-mute">
+              Aún no hay KPIs ni eventos de este video. Pulsa <b className="text-ink">Analizar video</b>:{' '}
+              {secs > windowSecs
+                ? `se analizan ${windowSecs} s a partir del punto actual, con un fotograma cada ${String(SAMPLE_STEP).replace('.', ',')} s.`
+                : `se analiza completo, con un fotograma cada ${String(SAMPLE_STEP).replace('.', ',')} s.`}
+            </div>
+          )}
         </main>
 
         <aside aria-label="Panel de análisis" className="flex min-w-0 flex-[1_1_380px] flex-col gap-4 border-l border-line bg-inset p-5">
+          {hasVideo && (
+            <p className="m-0 rounded-lg border border-dashed border-line-strong px-3 py-2 text-xs text-mute">
+              De este video salen el mapa de calor y la medición de pose. La comparativa, los rangos ideales y los diagnósticos del AI Coach siguen siendo de ejemplo.
+            </p>
+          )}
           <Segmented
             label="Vista del panel"
             value={tab}
@@ -400,13 +492,13 @@ function AnalysisView() {
           />
           {tab === 'stats' && (
             <>
-              <Heatmap data={data} />
+              {hasVideo && videoAnalysis ? <ImageHeatmap points={videoAnalysis.points} /> : <Heatmap data={data} />}
               <Compare data={data} />
             </>
           )}
           {tab === 'bio' && (
             <>
-              {hasVideo && <RealPose analysis={vision.analysis} aspect={meta ? meta.width / meta.height : 16 / 9} />}
+              {hasVideo && <RealPose analysis={shownAnalysis} aspect={meta ? meta.width / meta.height : 16 / 9} />}
               <Biomech data={data} />
             </>
           )}
@@ -422,9 +514,9 @@ function AnalysisView() {
                 <DiagSummary
                   key={d.id}
                   d={d}
-                  time={time(events[d.ev].pct)}
+                  time={time(data.events[d.ev].pct)}
                   onJump={() => {
-                    seek(events[d.ev].pct)
+                    seek(data.events[d.ev].pct)
                     setLayers((l) => ({ ...l, skel: true }))
                   }}
                 />
@@ -513,7 +605,9 @@ function OrbitControls({ orbit, onChange }: { orbit: Orbit; onChange: (o: Orbit)
 }
 
 interface TimelineProps {
-  data: SportData
+  sport: SportData['id']
+  events: GameEvent[]
+  legend: [EvCode, string][]
   pos: number
   evIdx: number
   time: (pct: number) => string
@@ -521,7 +615,7 @@ interface TimelineProps {
   range: [number, number] | null
 }
 
-function Timeline({ data, pos, evIdx, time, onSeek, range }: TimelineProps) {
+function Timeline({ sport, events, legend, pos, evIdx, time, onSeek, range }: TimelineProps) {
   return (
     <div className="px-7 pb-3.5">
       <div
@@ -539,13 +633,13 @@ function Timeline({ data, pos, evIdx, time, onSeek, range }: TimelineProps) {
             style={{ left: `${range[0]}%`, width: `${range[1] - range[0]}%` }}
           />
         )}
-        {data.events.map((e, i) => {
+        {events.map((e, i) => {
           const on = i === evIdx
           const color = EVENT_COLOR[e.code]
           const label = `${time(e.pct)} · ${e.type} · ${e.desc}`
           return (
             <button
-              key={e.pct}
+              key={`${e.pct}-${i}`}
               type="button"
               aria-label={label}
               title={label}
@@ -557,17 +651,17 @@ function Timeline({ data, pos, evIdx, time, onSeek, range }: TimelineProps) {
               className="absolute top-0 h-11 w-[26px] -translate-x-1/2 rounded-md border-[1.5px] p-0 font-mono text-xs font-bold"
               style={{ left: `${e.pct}%`, borderColor: color, background: on ? color : '#10151B', color: on ? '#090D10' : color }}
             >
-              {e.code === 'G' && data.id === 'basket' ? 'C' : e.code}
+              {e.code === 'G' && sport === 'basket' ? 'C' : e.code}
             </button>
           )
         })}
         <div className="pointer-events-none absolute top-3 -ml-px h-5 w-0.5 bg-ink" style={{ left: `${pos}%` }} />
       </div>
       <div className="mt-2.5 flex flex-wrap gap-4 text-xs text-mute">
-        {data.legend.map(([code, label]) => (
+        {legend.map(([code, label]) => (
           <span key={code} className="flex items-center gap-1.5">
             <span className="font-mono font-bold" style={{ color: EVENT_COLOR[code] }}>
-              {code === 'G' && data.id === 'basket' ? 'C' : code}
+              {code === 'G' && sport === 'basket' ? 'C' : code}
             </span>
             {label}
           </span>
