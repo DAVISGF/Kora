@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward, Upload } from 'lucide-react'
 import { Biomech, Compare, Heatmap, ImageHeatmap, KpiGrid, PerfBars } from '../components/Charts'
@@ -339,23 +339,27 @@ function AnalysisView() {
                 {fileError}
               </p>
             )}
-            <Viewer
-              data={data}
-              layers={layers}
-              tick={pb.tick}
-              view={shownView}
-              orbit={orbit}
-              cams={cams}
-              timecode={time(pos)}
-              video={video}
-              videoRef={pb.videoRef}
-              onMeta={setMeta}
-              real={shownAnalysis}
-              videoSize={meta}
-              visionStatus={scan ? `ANALIZANDO ${scanLabel}` : !vision.analysis && stored ? `IA REAL · ${stored.persons.length} personas · guardado` : visionLabel(vision.status, vision.analysis)}
-              onVideoError={() => setPlayError(true)}
-              overlay={overlay}
-            />
+            <div className="bg-[#0B0F15]">
+              <div className="mx-auto w-full max-w-[calc(46vh*16/9)]">
+                <Viewer
+                  data={data}
+                  layers={layers}
+                  tick={pb.tick}
+                  view={shownView}
+                  orbit={orbit}
+                  cams={cams}
+                  timecode={time(pos)}
+                  video={video}
+                  videoRef={pb.videoRef}
+                  onMeta={setMeta}
+                  real={shownAnalysis}
+                  videoSize={meta}
+                  visionStatus={scan ? `ANALIZANDO ${scanLabel}` : !vision.analysis && stored ? `IA REAL · ${stored.persons.length} personas · guardado` : visionLabel(vision.status, vision.analysis)}
+                  onVideoError={() => setPlayError(true)}
+                  overlay={overlay}
+                />
+              </div>
+            </div>
 
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
               <span className="mr-1 text-[13px] text-mute">Vista</span>
@@ -386,79 +390,7 @@ function AnalysisView() {
               </span>
             </div>
 
-            {shownView === '3d' && <OrbitControls orbit={orbit} onChange={setOrbit} />}
-
-            <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
-              <span className="mr-1 text-[13px] text-mute">Capas</span>
-              {LAYERS.map((l) => {
-                const on = layers[l.id]
-                return (
-                  <button
-                    key={l.id}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => setLayers({ ...layers, [l.id]: !on })}
-                    className={cx('inline-flex h-11 items-center gap-2 rounded-full border px-3 text-[13px] font-semibold', on ? 'bg-raised text-ink' : 'border-line text-mute')}
-                    style={on ? { borderColor: l.color } : undefined}
-                  >
-                    <span className="h-2.5 w-2.5 rounded-sm" style={{ background: on ? l.color : '#5B6677' }} />
-                    {l.label}
-                  </button>
-                )
-              })}
-            </div>
-
-            {hasVideo && (
-              <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
-                <span className="mr-1 text-[13px] text-mute">IA real</span>
-                <button type="button" onClick={() => void vision.analyze()} disabled={vision.status === 'loading'} className={cx(pill, 'border-lime text-lime')}>
-                  <ScanSearch size={16} aria-hidden="true" />
-                  {vision.status === 'loading' ? 'Analizando…' : 'Analizar fotograma'}
-                </button>
-                {scan ? (
-                  <button type="button" onClick={cancelScan} className={cx(pill, 'border-danger text-danger')}>
-                    Cancelar ({scan.done}/{scan.total || '…'})
-                  </button>
-                ) : (
-                  <button type="button" onClick={runScan} className="inline-flex h-11 items-center gap-2 rounded-lg bg-lime px-3 text-[13px] font-semibold text-lime-ink">
-                    {videoAnalysis ? 'Volver a analizar el video' : 'Analizar video'}
-                  </button>
-                )}
-                <button type="button" aria-pressed={vision.live} onClick={() => vision.setLive(!vision.live)} className={cx(pill, vision.live ? 'border-ink' : 'border-line')}>
-                  Análisis continuo
-                </button>
-                <button type="button" aria-pressed={vision.ball} onClick={() => vision.setBall(!vision.ball)} className={cx(pill, vision.ball ? 'border-ink' : 'border-line')}>
-                  Detectar balón
-                </button>
-                <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
-                  <span className="text-[13px] text-mute">Método del análisis continuo</span>
-                  <Segmented
-                    label="Método del análisis continuo"
-                    value={vision.engine}
-                    onChange={vision.setEngine}
-                    options={[
-                      { id: 'pose', label: 'Navegador · pose' },
-                      { id: 'team', label: 'Navegador · equipo' },
-                      { id: 'cloud', label: 'Roboflow' },
-                    ]}
-                  />
-                  <span className="min-w-0 flex-[1_1_260px] text-xs text-mute">{ENGINE_HELP[vision.engine]}</span>
-                </div>
-                {scanError && (
-                  <p role="alert" className="m-0 w-full text-[13px] text-danger">
-                    {scanError}
-                  </p>
-                )}
-                {vision.message && (
-                  <p role="alert" className="m-0 w-full text-[13px] text-danger">
-                    {vision.message}
-                    {vision.status === 'not_configured' && ' Añádela en el proyecto de Vercel y vuelve a desplegar.'}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+            <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 pt-3 pb-1">
               <button type="button" aria-label="Evento anterior" onClick={() => jump(evIdx - 1)} className={square}>
                 <SkipBack size={18} aria-hidden="true" />
               </button>
@@ -519,6 +451,8 @@ function AnalysisView() {
                 )}
               </div>
             </div>
+
+            <Timeline sport={data.id} events={events} legend={legend} pos={pos} evIdx={evIdx} time={time} onSeek={seek} range={clipOn ? range : null} />
 
             {slow && (
               <div aria-label="Análisis en cámara lenta" className="mx-4 mb-3 flex flex-col gap-3 rounded-[10px] border border-line-strong bg-inset p-3.5">
@@ -604,8 +538,82 @@ function AnalysisView() {
               </div>
             )}
 
-            <Timeline sport={data.id} events={events} legend={legend} pos={pos} evIdx={evIdx} time={time} onSeek={seek} range={clipOn ? range : null} />
+            {shownView === '3d' && <OrbitControls orbit={orbit} onChange={setOrbit} />}
           </section>
+
+          <section aria-label="Capas del video" className={card}>
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+              <span className="mr-1 text-[13px] text-mute">Capas</span>
+              {LAYERS.map((l) => {
+                const on = layers[l.id]
+                return (
+                  <button
+                    key={l.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setLayers({ ...layers, [l.id]: !on })}
+                    className={cx('inline-flex h-11 items-center gap-2 rounded-full border px-3 text-[13px] font-semibold', on ? 'bg-raised text-ink' : 'border-line text-mute')}
+                    style={on ? { borderColor: l.color } : undefined}
+                  >
+                    <span className="h-2.5 w-2.5 rounded-sm" style={{ background: on ? l.color : '#5B6677' }} />
+                    {l.label}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          {hasVideo && (
+            <section aria-label="Análisis con IA" className={card}>
+                <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+                  <span className="mr-1 text-[13px] text-mute">IA real</span>
+                  <button type="button" onClick={() => void vision.analyze()} disabled={vision.status === 'loading'} className={cx(pill, 'border-lime text-lime')}>
+                    <ScanSearch size={16} aria-hidden="true" />
+                    {vision.status === 'loading' ? 'Analizando…' : 'Analizar fotograma'}
+                  </button>
+                  {scan ? (
+                    <button type="button" onClick={cancelScan} className={cx(pill, 'border-danger text-danger')}>
+                      Cancelar ({scan.done}/{scan.total || '…'})
+                    </button>
+                  ) : (
+                    <button type="button" onClick={runScan} className="inline-flex h-11 items-center gap-2 rounded-lg bg-lime px-3 text-[13px] font-semibold text-lime-ink">
+                      {videoAnalysis ? 'Volver a analizar el video' : 'Analizar video'}
+                    </button>
+                  )}
+                  <button type="button" aria-pressed={vision.live} onClick={() => vision.setLive(!vision.live)} className={cx(pill, vision.live ? 'border-ink' : 'border-line')}>
+                    Análisis continuo
+                  </button>
+                  <button type="button" aria-pressed={vision.ball} onClick={() => vision.setBall(!vision.ball)} className={cx(pill, vision.ball ? 'border-ink' : 'border-line')}>
+                    Detectar balón
+                  </button>
+                  <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+                    <span className="text-[13px] text-mute">Método del análisis continuo</span>
+                    <Segmented
+                      label="Método del análisis continuo"
+                      value={vision.engine}
+                      onChange={vision.setEngine}
+                      options={[
+                        { id: 'pose', label: 'Navegador · pose' },
+                        { id: 'team', label: 'Navegador · equipo' },
+                        { id: 'cloud', label: 'Roboflow' },
+                      ]}
+                    />
+                    <span className="min-w-0 flex-[1_1_260px] text-xs text-mute">{ENGINE_HELP[vision.engine]}</span>
+                  </div>
+                  {scanError && (
+                    <p role="alert" className="m-0 w-full text-[13px] text-danger">
+                      {scanError}
+                    </p>
+                  )}
+                  {vision.message && (
+                    <p role="alert" className="m-0 w-full text-[13px] text-danger">
+                      {vision.message}
+                      {vision.status === 'not_configured' && ' Añádela en el proyecto de Vercel y vuelve a desplegar.'}
+                    </p>
+                  )}
+                </div>
+            </section>
+          )}
 
           {!hasVideo && (
             <>
@@ -790,13 +798,22 @@ interface TimelineProps {
 }
 
 function Timeline({ sport, events, legend, pos, evIdx, time, onSeek, range }: TimelineProps) {
+  const seekAt = (e: PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    onSeek(Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100)))
+  }
   return (
     <div className="px-7 pb-3.5">
       <div
-        className="relative h-11"
-        onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect()
-          onSeek(((e.clientX - r.left) / r.width) * 100)
+        title="Arrastra para moverte por el video"
+        className="relative h-11 cursor-grab touch-none select-none active:cursor-grabbing"
+        onPointerDown={(e) => {
+          if (e.button !== 0) return
+          e.currentTarget.setPointerCapture(e.pointerId)
+          seekAt(e)
+        }}
+        onPointerMove={(e) => {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) seekAt(e)
         }}
       >
         <div className="absolute inset-x-0 top-5 h-1 rounded-sm bg-line" />
@@ -818,11 +835,9 @@ function Timeline({ sport, events, legend, pos, evIdx, time, onSeek, range }: Ti
               aria-label={label}
               title={label}
               aria-pressed={on}
-              onClick={(ev) => {
-                ev.stopPropagation()
-                onSeek(e.pct)
-              }}
-              className="absolute top-0 h-11 w-[26px] -translate-x-1/2 rounded-md border-[1.5px] p-0 font-mono text-xs font-bold"
+              onPointerDown={(ev) => ev.stopPropagation()}
+              onClick={() => onSeek(e.pct)}
+              className="absolute top-0 h-11 w-[26px] cursor-pointer -translate-x-1/2 rounded-md border-[1.5px] p-0 font-mono text-xs font-bold"
               style={{ left: `${e.pct}%`, borderColor: color, background: on ? color : '#10151B', color: on ? '#090D10' : color }}
             >
               {e.code === 'G' && sport === 'basket' ? 'C' : e.code}
