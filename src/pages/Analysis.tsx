@@ -16,7 +16,7 @@ import { usePlayback } from '../lib/usePlayback'
 import { useVision, type VisionStatus } from '../lib/useVision'
 import { jointAngles, mainPerson, type FrameAnalysis } from '../lib/vision'
 import { frameAt, MAX_FRAMES, SAMPLE_STEP, toGameEvents } from '../lib/videoAnalysis'
-import { comma, copyText, cx, downloadText, fmtShort, fmtTime, isVideoFile, slug } from '../lib/util'
+import { comma, copyText, cx, downloadText, fmtClock, fmtShort, fmtTime, isVideoFile, slug } from '../lib/util'
 
 const LAYERS: { id: keyof LayerState; label: string; color: string }[] = [
   { id: 'track', label: 'Tracking', color: '#CBF62E' },
@@ -115,8 +115,32 @@ function AnalysisView() {
     setSlow(!slow)
   }
 
+  // Con un video real, el recorte se guarda con lo que el AI Coach vio dentro de ese tramo.
+  const coachIn = useMemo(() => {
+    if (!hasVideo || !videoAnalysis?.coach) return null
+    const from = (secs * range[0]) / 100
+    const to = (secs * range[1]) / 100
+    const inside = (f: Finding) => [f.evidence?.t, ...f.moments].some((t) => t !== undefined && t >= from - 0.5 && t <= to + 0.5)
+    const people = videoAnalysis.coach.people
+    for (const [n, p] of people.entries()) {
+      const hit = [p.focus, ...p.polish, ...p.good].find((f): f is Finding => !!f && inside(f))
+      if (hit) return { finding: hit, who: people.length > 1 ? `Jugador ${n + 1}` : 'Jugador' }
+    }
+    return null
+  }, [hasVideo, videoAnalysis, secs, range])
+
   const saveClip = () => {
-    const d = diagsIn[0]
+    const real = coachIn?.finding
+    const d: { sev: Clip['sev']; who: string; title: string; meas: string; ideal: string; drills: [string, string][] } | undefined = real
+      ? {
+          sev: real.status === 'good' ? 'Correcto' : 'Alerta',
+          who: coachIn.who,
+          title: real.title,
+          meas: real.measured ?? '—',
+          ideal: real.target ?? '—',
+          drills: real.drill ? [[real.drill.name, real.drill.dose]] : [['Sigue así', '—']],
+        }
+      : diagsIn[0]
     const clip: Clip = {
       id: `clip-${Date.now()}`,
       name: clipName.trim() || `Recorte ${time(range[0])}`,
@@ -277,7 +301,15 @@ function AnalysisView() {
         <DownloadPanel data={hasVideo ? { ...data, match: video?.name ?? data.match, events, kpis: videoAnalysis?.kpis ?? [], diags: [] } : data} secs={secs} />
       )}
 
-      {person && <PersonModal key={person.id} person={person} onSeek={(t) => seek((t / secs) * 100)} onClose={() => setPersonId(null)} />}
+      {person && (
+        <PersonModal
+          key={person.id}
+          person={person}
+          coach={videoAnalysis?.coach?.people.find((p) => p.personId === person.id)}
+          onSeek={(t) => seek((t / secs) * 100)}
+          onClose={() => setPersonId(null)}
+        />
+      )}
 
       <div className="flex flex-wrap">
         <main className="flex min-w-0 flex-[999_1_600px] flex-col gap-4 p-5">
@@ -739,9 +771,9 @@ function CoachSummary({ report, analyzed, error, onSeek }: { report: CoachReport
                   <span className="text-[13px] text-mute">{f.seen}</span>
                 </div>
                 {f.evidence && (
-                  <button type="button" onClick={() => onSeek(f.evidence!.t)} className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border border-line-strong bg-raised px-2.5 font-mono text-xs text-ink" aria-label={`Ver en el video, ${fmtTime(f.evidence.t)}`}>
+                  <button type="button" onClick={() => onSeek(f.evidence!.t)} className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border border-line-strong bg-raised px-2.5 font-mono text-xs text-ink" aria-label={`Ver en el video, ${fmtClock(f.evidence.t)}`}>
                     <Play size={12} fill="currentColor" aria-hidden="true" />
-                    {fmtTime(f.evidence.t)}
+                    {fmtClock(f.evidence.t)}
                   </button>
                 )}
               </div>

@@ -1,12 +1,17 @@
 import { useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { Play, X } from 'lucide-react'
 import { EVENT_COLOR } from '../data/sports'
+import type { Finding, PersonCoach } from '../lib/coach/types'
 import { SPRINT_THRESHOLD, type PersonStats } from '../lib/videoAnalysis'
-import { comma, fmtShort, fmtTime } from '../lib/util'
+import { comma, fmtClock, fmtShort, fmtTime } from '../lib/util'
+import { STATUS_COLOR } from './CoachViews'
 import { eyebrow } from './ui'
 
 interface Props {
   person: PersonStats
+  /** Su informe de técnica, si el AI Coach la analizó */
+  coach?: PersonCoach | null
   /** Salta el visor a ese segundo del video */
   onSeek: (t: number) => void
   onClose: () => void
@@ -23,7 +28,7 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
 }
 
 /** Ficha de una persona seguida en el video: foto, estadísticas y lo detectado sobre ella. */
-export default function PersonModal({ person, onSeek, onClose }: Props) {
+export default function PersonModal({ person, coach, onSeek, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -81,6 +86,39 @@ export default function PersonModal({ person, onSeek, onClose }: Props) {
             <Stat label="En cuadro" value={fmtShort(person.lastT - person.firstT)} note={`${person.samples} muestras`} />
             <Stat label="Confianza media" value={`${Math.round(person.conf * 100)} %`} />
           </section>
+
+          {coach && (
+            <section className="flex flex-col gap-2 rounded-lg border border-line-strong bg-inset p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className={eyebrow}>Técnica · AI Coach</span>
+                <Link to="/coach" className="flex min-h-11 items-center text-[13px] font-semibold text-lime">
+                  Ver el informe
+                </Link>
+              </div>
+              <p className="m-0 text-[15px] leading-snug font-semibold">{coach.headline}</p>
+              {[coach.focus, ...coach.polish].filter((f): f is Finding => !!f).map((f) => (
+                <div key={f.id} className="flex items-start justify-between gap-3 border-t border-line pt-2">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold" style={{ color: STATUS_COLOR[f.status] }}>
+                      {f.title}
+                    </span>
+                    <span className="text-[13px] text-mute">{f.cue}</span>
+                  </div>
+                  {f.evidence && (
+                    <button type="button" onClick={() => jump(f.evidence!.t)} className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border border-line-strong bg-raised px-2.5 font-mono text-xs text-ink" aria-label={`Ver en el video, ${fmtClock(f.evidence.t)}`}>
+                      <Play size={12} fill="currentColor" aria-hidden="true" />
+                      {fmtClock(f.evidence.t)}
+                    </button>
+                  )}
+                </div>
+              ))}
+              {coach.good.length > 0 && (
+                <p className="m-0 border-t border-line pt-2 text-[13px] text-mute">
+                  <b className="font-semibold text-ok">Bien hecho:</b> {coach.good.map((f) => f.label.toLowerCase()).join(', ')}.
+                </p>
+              )}
+            </section>
+          )}
 
           <section className="flex flex-col gap-2">
             <span className={eyebrow}>Velocidad en el tiempo</span>

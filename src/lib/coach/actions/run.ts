@@ -17,6 +17,11 @@ const MAX_GAP_S = 0.5
 export const FAST_CADENCE = 3.4
 /** Por debajo de esto, con zancada de carrera, el video está a cámara lenta. */
 const SLOW_CADENCE = 2.2
+/** Irregularidad máxima del ritmo de los pasos (desviación entre la media) para hablar de carrera. */
+const UNEVEN_MAX = 0.4
+/** A cámara lenta se exige más: zancada amplia y ritmo muy regular. */
+const SLOW_RUN_SWING = 0.6
+const SLOW_UNEVEN_MAX = 0.25
 /** Fracción mínima del avance que debe verse a lo ancho de la imagen para medir brazos y tronco. */
 const MIN_ACROSS = 0.4
 
@@ -121,10 +126,21 @@ export function detectRuns(series: PoseSeries): RunRep[] {
     const m: Record<string, Measure> = {}
     const missing: Record<string, Missing> = {}
     const info: Record<string, number> = { steps: bout.length }
+    const gaps = bout.slice(1).map((sw, n) => sw.t - bout[n].t)
+    const meanGap = gaps.reduce((a, c) => a + c, 0) / gaps.length
+    info.amp = median(bout.map((sw) => sw.amp))
+    info.uneven = Math.sqrt(gaps.reduce((a, c) => a + (c - meanGap) ** 2, 0) / gaps.length) / meanGap
 
     const cadence = 1 / step
-    if (cadence >= SLOW_CADENCE) info.cadence = cadence
-    else info.slow = 1
+    if (cadence >= SLOW_CADENCE) {
+      if (info.uneven > UNEVEN_MAX) continue
+      info.cadence = cadence
+    } else {
+      // Pasos lentos: o es una carrera grabada a cámara lenta, o alguien que no corre (camina, amaga,
+      // conduce el balón). Solo se toma por carrera si la zancada es amplia y muy regular.
+      if (info.amp < SLOW_RUN_SWING || info.uneven > SLOW_UNEVEN_MAX || bout.length < 5) continue
+      info.slow = 1
+    }
 
     // ── Rodillas: hasta dónde sube el muslo en cada paso ──
     const lifts: { v: number; t: number; i: number; side: Side }[] = []

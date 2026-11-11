@@ -3,13 +3,15 @@
 // que un entrenador miraría: pie de apoyo, rodilla de apoyo, tronco y final.
 
 import { ballAt, bodyOf, frontalness, percentile, span, thighLift, type Body } from '../body'
-import { angleAt, center, joint, opposite, pt, SIDES, trunkLean } from '../geometry'
+import { angleAt, center, joint, pt, SIDES, trunkLean } from '../geometry'
 import type { BallObs, Measure, Missing, PoseSeries, Rep, Side, View } from '../types'
 
 /** Distancia máxima del balón a un tobillo, en troncos, para decir que está en el pie. */
 const AT_FOOT = 1.15
 /** Cambio de velocidad del balón, en troncos por segundo, con el que empieza a contar un golpe. */
 const ONSET = 2.5
+/** Lo que puede bailar la detección del balón de un fotograma a otro sin haberse movido, en troncos. */
+const JITTER = 0.15
 /** Cambio total de velocidad del balón, en troncos por segundo, que delata el golpe. */
 const KICK_JUMP = 5
 /** Velocidad mínima con la que sale el balón, en troncos por segundo (un pase firme; un toque de conducción es menos). */
@@ -20,10 +22,12 @@ const BALL_GAP_S = 0.26
 const MIN_BETWEEN_S = 0.8
 /** Recorrido del pie que golpea, de atrás adelante, en troncos, cuando se ve justo de lado. */
 const SWING_SPAN = 2.2
-/** Velocidad mínima del pie que golpea respecto a la cadera, en troncos por segundo. */
+/** Velocidad mínima del pie que golpea, en troncos por segundo. */
 const SWING_SPEED = 5
-/** Velocidad máxima del pie de apoyo respecto a la cadera (la cadera sí avanza sobre él). */
-const PLANT_SPEED_MAX = 4
+/** Recorrido mínimo del pie que golpea alrededor del contacto, en troncos. */
+const SWING_RANGE = 0.9
+/** Radio, en troncos, dentro del cual el pie de apoyo se da por quieto (con algo de margen si la cámara se mueve). */
+const PLANT_RADIUS = 0.4
 /** Fracción del gesto que debe verse a lo ancho de la imagen para medir apoyo, rodilla y tronco. */
 const SIDE_MIN = 0.6
 /** Ancho de hombros y caderas con el que el cuerpo se ve del todo de frente (o de espaldas). */
@@ -92,8 +96,10 @@ export function ballDepartures(body: Body, lenient = false): { i: number; t: num
     const after = velocity(a, b)
     if (!after) continue
     const before = (n >= 2 ? velocity(seen[n - 2], a) : null) ?? { x: 0, y: 0 }
-    // El golpe empieza aquí si el balón, que iba a su ritmo, cambia de golpe de velocidad…
-    if (Math.hypot(after.x - before.x, after.y - before.y) < ONSET * k) continue
+    // El golpe empieza aquí si el balón, que iba a su ritmo, cambia de golpe de velocidad
+    // (y se mueve más de lo que tiembla su detección de un fotograma a otro)…
+    const moved = Math.hypot(after.x, after.y) * (b.t - a.t)
+    if (Math.hypot(after.x - before.x, after.y - before.y) < ONSET * k || moved < JITTER) continue
     // …y en este tramo o en el siguiente ya sale disparado.
     const next = n + 1 < seen.length ? velocity(b, seen[n + 1]) : null
     const peak = next && Math.hypot(next.x, next.y) > Math.hypot(after.x, after.y) ? next : after
@@ -135,6 +141,13 @@ export function kickCandidates(series: PoseSeries): number[] {
   return body ? ballDepartures(body, true).map((d) => d.t) : []
 }
 
+interface Foot {
+  i: number
+  side: Side
+  x: number
+  y: number
+}
+
 /** Detecta y mide los golpeos de una serie limpia. */
 export function detectKicks(series: PoseSeries): KickRep[] {
   const body = bodyOf(series.frames)
@@ -144,34 +157,52 @@ export function detectKicks(series: PoseSeries): KickRep[] {
 
   for (const dep of ballDepartures(body)) {
     const tC = dep.t
-    const swing = span(f, tC - 0.14, tC + 0.06)
-    if (swing.length < 2) continue
+    const scale = body.scale[dep.i]
     const info: Record<string, number> = {}
 
-    // Pierna que golpea: la que más rápido se mueve respecto a la cadera alrededor del contacto.
-    const relAnkle = (i: number, side: Side) => {
-      const a = pt(f[i].pose, joint(side, 'ankle'))
-      const hip = center(f[i].pose, 'hip')
-      return a && hip ? { x: (a.x - hip.x) / body.scale[i], y: (a.y - hip.y) / body.scale[i] } : null
+    // Los dos tobillos de cada fotograma, en la imagen y medidos en troncos. No se confía en cuál
+    // es el izquierdo y cuál el derecho: cuando las piernas se cruzan, el modelo los intercambia.
+    const feetIn = (indices: number[]): Foot[] =>
+      indices.flatMap((i) =>
+        SIDES.flatMap((side) => {
+          const a = pt(f[i].pose, joint(side, 'ankle'))
+          return a ? [{ i, side, x: a.x / scale, y: a.y / scale }] : []
+        }),
+      )
+    const win = span(f, tC - 0.17, tC + 0.1)
+    const feet = feetIn(win)
+    if (feet.length < 4) continue
+
+    // El pie de apoyo es el que no se mueve: el sitio de la imagen con más tobillos cerca.
+    let anchor = feet[0]
+    let most = 0
+    for (const p of feet) {
+      const n = feet.filter((q) => Math.hypot(q.x - p.x, q.y - p.y) <= PLANT_RADIUS).length
+      if (n > most) {
+        most = n
+        anchor = p
+      }
     }
-    // Desplazamiento neto del pie en el tramo del golpe (los saltos de un fotograma suelto no cuentan).
-    const sweepSpeed = (side: Side) => {
-      const ps = swing.map((i) => ({ p: relAnkle(i, side), t: f[i].t })).filter((x): x is { p: { x: number; y: number }; t: number } => !!x.p)
-      if (ps.length < 2) return null
-      const a = ps[0]
-      const b = ps[ps.length - 1]
-      return Math.hypot(b.p.x - a.p.x, b.p.y - a.p.y) / (b.t - a.t || 1)
+    const off = (p: Foot) => Math.hypot(p.x - anchor.x, p.y - anchor.y)
+    /** De los dos tobillos de un fotograma, el que está en el apoyo y el otro. */
+    const split = (i: number, all: Foot[]): { planted: Foot; swinging: Foot } | null => {
+      const here = all.filter((p) => p.i === i)
+      if (here.length < 2) return null
+      const [p, q] = off(here[0]) <= off(here[1]) ? here : [here[1], here[0]]
+      return off(p) <= PLANT_RADIUS ? { planted: p, swinging: q } : null
     }
-    const vl = sweepSpeed('left')
-    const vr = sweepSpeed('right')
-    if (vl === null || vr === null) continue
-    const side: Side = vr >= vl ? 'right' : 'left'
-    const plant = opposite(side)
-    // Un golpeo de verdad: un pie barre rápido mientras el otro aguanta en el suelo.
-    // Si se mueven los dos es una conducción o una carrera; si ninguno, el balón pasó de largo.
-    const kickSpeed = Math.max(vl, vr)
-    const plantSpeed = Math.min(vl, vr)
-    if (kickSpeed < SWING_SPEED || plantSpeed > Math.min(PLANT_SPEED_MAX, 0.6 * kickSpeed)) continue
+    const pairs = win.map((i) => split(i, feet)).filter((x): x is { planted: Foot; swinging: Foot } => !!x)
+    const complete = win.filter((i) => feet.filter((p) => p.i === i).length === 2).length
+    // Un golpeo de verdad: un pie barre rápido mientras el otro aguanta en el suelo. Si se mueven
+    // los dos es una conducción o una carrera; si no se mueve ninguno, el balón pasó de largo.
+    if (pairs.length < 2 || pairs.length < complete * 0.6) continue
+    const sx = pairs.map((p) => p.swinging.x)
+    const sy = pairs.map((p) => p.swinging.y)
+    const range = Math.hypot(Math.max(...sx) - Math.min(...sx), Math.max(...sy) - Math.min(...sy))
+    const kickSpeed = range / (f[win[win.length - 1]].t - f[win[0]].t || 1)
+    if (range < SWING_RANGE || kickSpeed < SWING_SPEED) continue
+    const rights = pairs.filter((p) => p.swinging.side === 'right').length
+    const side: Side = rights * 2 >= pairs.length ? 'right' : 'left'
     info.swing = kickSpeed
 
     const m: Record<string, Measure> = {}
@@ -180,7 +211,10 @@ export function detectKicks(series: PoseSeries): KickRep[] {
     // Vista. Dos pistas tienen que coincidir en que se le ve de lado: el pie cruza la imagen
     // al golpear, y los hombros y las caderas se ven estrechos. Una sola engaña: un pase corto
     // barre poco aunque se vea de lado, y quien viene hacia la cámara cruza la imagen por la perspectiva.
-    const xs = span(f, tC - 0.3, tC + 0.2).map((i) => relAnkle(i, side)?.x).filter((x): x is number => x !== undefined)
+    const wide = span(f, tC - 0.3, tC + 0.2)
+    const wideFeet = feetIn(wide)
+    const path = wide.map((i) => split(i, wideFeet)).filter((x): x is { planted: Foot; swinging: Foot } => !!x)
+    const xs = path.map((p) => p.swinging.x)
     const sweep = xs.length >= 3 ? Math.min(1, (Math.max(...xs) - Math.min(...xs)) / SWING_SPAN) : null
     const facing = frontalness(body, span(f, tC - 0.35, tC + 0.1), 0.5)
     const narrow = facing === null ? null : Math.sqrt(Math.max(0, 1 - Math.min(1, facing / FULL_FRONT) ** 2))
@@ -190,34 +224,37 @@ export function detectKicks(series: PoseSeries): KickRep[] {
     const view: View = across === null ? 'oblique' : across >= SIDE_MIN ? 'side' : across >= 0.35 ? 'oblique' : 'front'
     if (across !== null) info.across = across
     // Sentido del golpeo en la imagen: hacia donde sale el balón o, si no se vio, hacia donde va el pie.
-    const late = span(f, tC - 0.02, tC + 0.15).map((i) => relAnkle(i, side)?.x).filter((x): x is number => x !== undefined)
-    const early = span(f, tC - 0.25, tC - 0.08).map((i) => relAnkle(i, side)?.x).filter((x): x is number => x !== undefined)
+    const early = path.filter((p) => f[p.swinging.i].t <= tC - 0.06).map((p) => p.swinging.x)
+    const late = path.filter((p) => f[p.swinging.i].t >= tC).map((p) => p.swinging.x)
     const footDir = late.length && early.length ? Math.sign(median(late)! - median(early)!) : 0
     const dir = Math.abs(dep.dirX) >= 2 ? Math.sign(dep.dirX) : footDir
     const sideways = view === 'side' && dir !== 0
 
-    // ── Pie de apoyo: dónde queda respecto al balón, en el sentido del golpeo ──
-    const ball = ballAt(body, dep.i)
-    const support = pt(f[dep.i].pose, joint(plant, 'ankle'))
-    const striker = pt(f[dep.i].pose, joint(side, 'ankle'))
     // Quien golpea está de pie y con el balón a su alcance; si no, el balón era de otro.
-    if (ball && support && Math.hypot(ball.x - support.x, ball.y - support.y) / body.scale[dep.i] > REACH_MAX) continue
-    if (support && striker && Math.hypot(striker.x - support.x, striker.y - support.y) / body.scale[dep.i] > REACH_MAX * 1.3) continue
-    const upright = center(f[dep.i].pose, 'shoulder')
+    const ball = ballAt(body, dep.i)
+    const now = split(dep.i, feetIn([dep.i]))
+    if (ball && Math.hypot(ball.x / scale - anchor.x, ball.y / scale - anchor.y) > REACH_MAX) continue
+    const shoulders = center(f[dep.i].pose, 'shoulder')
     const hips = center(f[dep.i].pose, 'hip')
-    if (upright && hips && upright.y > hips.y - 0.5 * body.scale[dep.i]) continue
+    if (shoulders && hips && shoulders.y > hips.y - 0.5 * scale) continue
+
+    // ── Pie de apoyo: dónde queda respecto al balón, en el sentido del golpeo ──
     if (!sideways) missing.plant = 'view'
-    else if (!ball || !support) missing.plant = 'hidden'
-    else m.plant = { value: ((ball.x - support.x) * dir) / body.scale[dep.i], t: f[dep.i].t }
+    else if (!ball) missing.plant = 'hidden'
+    else m.plant = { value: (ball.x / scale - (now?.planted.x ?? anchor.x)) * dir, t: f[dep.i].t }
 
     // ── Rodilla de apoyo: algo doblada para aguantar el cuerpo ──
     if (view !== 'side') missing.knee = 'view'
     else {
+      const near = span(f, tC - 0.07, tC + 0.07)
+      const nearFeet = feetIn(near)
       const angles: number[] = []
-      for (const i of span(f, tC - 0.07, tC + 0.07)) {
-        const hip = pt(f[i].pose, joint(plant, 'hip'))
-        const knee = pt(f[i].pose, joint(plant, 'knee'))
-        const ankle = pt(f[i].pose, joint(plant, 'ankle'))
+      for (const i of near) {
+        const leg = split(i, nearFeet)?.planted.side
+        if (!leg) continue
+        const hip = pt(f[i].pose, joint(leg, 'hip'))
+        const knee = pt(f[i].pose, joint(leg, 'knee'))
+        const ankle = pt(f[i].pose, joint(leg, 'ankle'))
         const angle = hip && knee && ankle ? angleAt(hip, knee, ankle) : null
         if (angle !== null) angles.push(angle)
       }
@@ -233,17 +270,17 @@ export function detectKicks(series: PoseSeries): KickRep[] {
       else m.lean = { value: median(leans)! * dir, t: f[dep.i].t, method: 'angle' }
     }
 
-    // ── Final: hasta dónde sube la pierna después de golpear ──
-    const after = span(f, tC, tC + 0.4)
-    const lifts = after.map((i) => ({ v: thighLift(body, i, side), t: f[i].t })).filter((x): x is { v: number; t: number } => x.v !== null)
+    // ── Final: hasta dónde sube la pierna después de golpear (la de apoyo apenas se levanta) ──
+    const lifts = span(f, tC, tC + 0.4)
+      .map((i) => ({ v: Math.max(...SIDES.map((sd) => thighLift(body, i, sd) ?? -1)), t: f[i].t }))
+      .filter((x) => x.v >= 0)
     const last = f[f.length - 1].t
     if (lifts.length < 2) missing.follow = last - tC < 0.25 ? 'cut' : 'hidden'
     else {
-      const top = lifts.reduce((a, l) => (l.v > a.v ? l : a))
       // Un solo fotograma muy por encima del resto suele ser un punto mal puesto.
-      const sorted = lifts.map((l) => l.v).sort((a, b) => b - a)
-      const value = sorted.length >= 3 ? sorted[1] : sorted[0]
-      m.follow = { value, t: top.t, method: 'vertical' }
+      const sorted = [...lifts].sort((x, y) => y.v - x.v)
+      const pick = sorted.length >= 3 ? sorted[1] : sorted[0]
+      m.follow = { value: pick.v, t: pick.t, method: 'vertical' }
     }
 
     info.ballSpeed = Math.abs(dep.dirX)

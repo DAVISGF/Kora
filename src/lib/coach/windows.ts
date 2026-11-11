@@ -8,7 +8,10 @@ import type { WindowReason } from './types'
 
 /** Fotogramas de técnica por análisis, entre todas las personas. */
 export const DENSE_BUDGET = 320
-export const FPS_MAX = 24
+/** Cadencia máxima de la pasada base: de sobra para un tiro o una carrera. */
+export const FPS_MAX = 16
+/** Cadencia con la que se afina alrededor de un golpeo, que dura décimas de segundo. */
+export const FPS_REFINE = 24
 /** Por debajo de esta cadencia un tiro o un golpeo quedan mal resueltos: se pasa a mirar solo tramos. */
 export const FPS_MIN = 10
 /** Altura mínima de la persona, como fracción del alto del video, para medirle la técnica. */

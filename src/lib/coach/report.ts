@@ -253,9 +253,11 @@ export function coachPerson(person: PersonReps, sport: SportId): PersonCoach | n
   if (cadence.length) extras.push(`Tu ritmo al correr: unos ${(Math.round(Math.max(...cadence) * 10) / 10).toString().replace('.', ',')} pasos por segundo.`)
 
   const saw = actions.length ? `Vimos ${list(actions.map((a) => countNoun(a.kind, a.count)))}.` : ''
+  const total = actions.reduce((sum, a) => sum + a.count, 0)
   let headline: string
   if (focus?.status === 'fix') headline = `${saw} Lo primero: ${lower(focus.title)}.`
   else if (focus) headline = `${saw} Algo para probar: ${lower(focus.title)}.`
+  else if (good.length && total === 1) headline = `${saw} En lo que pudimos medir, no vimos nada importante que corregir.`
   else if (good.length) headline = `${saw} No vimos nada importante que corregir. ¡Buen trabajo!`
   else if (actions.length) headline = `${saw} No pudimos medir lo suficiente para darte un consejo.`
   else headline = extras[0] ?? ''

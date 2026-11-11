@@ -13,7 +13,7 @@ import {
   captures,
   countCaptures,
   DENSE_BUDGET,
-  FPS_MAX,
+  FPS_REFINE,
   pickProtagonists,
   planWindows,
   type CoarseEvent,
@@ -55,6 +55,14 @@ export interface CollectOptions {
 /** Fotogramas reservados para afinar alrededor de los instantes clave. */
 const REFINE_SHARE = 0.25
 const REFINE_HALF_S = 0.45
+/** Dos capturas más juntas que esto son el mismo fotograma del video. */
+const SAME_FRAME_S = 0.008
+
+/** Ordena los fotogramas y quita los repetidos: el mismo instante medido en las dos pasadas. */
+function distinct(frames: PoseFrame[]): PoseFrame[] {
+  const sorted = [...frames].sort((a, b) => a.t - b.t)
+  return sorted.filter((f, i) => i === 0 || f.t - sorted[i - 1].t > SAME_FRAME_S)
+}
 
 /** Mide la pose densa de los protagonistas del video. */
 export async function collectSeries(video: HTMLVideoElement, coarse: Coarse, opts: CollectOptions): Promise<Collected> {
@@ -87,11 +95,11 @@ export async function collectSeries(video: HTMLVideoElement, coarse: Coarse, opt
     )
 
   // Segunda pasada: alrededor de cada instante clave, todos los fotogramas del video.
-  if (opts.refine && base.fps < FPS_MAX - 2) {
+  if (opts.refine && base.fps < FPS_REFINE - 2) {
     const extra = new Map<number, Window[]>()
     let left = budget - total
     for (const c of opts.refine(build())) {
-      const cost = Math.ceil(2 * REFINE_HALF_S * FPS_MAX)
+      const cost = Math.ceil(2 * REFINE_HALF_S * FPS_REFINE)
       if (left < cost || !tracks.has(c.personId)) continue
       left -= cost
       const list = extra.get(c.personId) ?? []
@@ -99,11 +107,11 @@ export async function collectSeries(video: HTMLVideoElement, coarse: Coarse, opt
       extra.set(c.personId, list)
     }
     const have = new Map([...frames.entries()].map(([id, fs]) => [id, fs.map((f) => f.t)]))
-    const more = captures(extra, FPS_MAX, have)
+    const more = captures(extra, FPS_REFINE, have)
     if (more.length) {
       total += countCaptures(more)
       const added = await samplePoses(video, tracks, more, sampling)
-      for (const [id, fs] of added) frames.set(id, [...(frames.get(id) ?? []), ...fs].sort((a, b) => a.t - b.t))
+      for (const [id, fs] of added) frames.set(id, distinct([...(frames.get(id) ?? []), ...fs]))
     }
   }
 
