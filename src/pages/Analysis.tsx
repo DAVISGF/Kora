@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward, Upload } from 'lucide-react'
 import { Biomech, Compare, Heatmap, ImageHeatmap, KpiGrid, PerfBars } from '../components/Charts'
@@ -10,7 +10,7 @@ import { btnGhost, btnPrimary, card, input, SampleBadge, Segmented } from '../co
 import { EVENT_COLOR, trendColor, type EvCode, type GameEvent, type SportData } from '../data/sports'
 import { analysisReportMd, eventsCsv } from '../lib/report'
 import { useStore, type Clip } from '../lib/store'
-import { usePlayback } from '../lib/usePlayback'
+import { SPEEDS, usePlayback } from '../lib/usePlayback'
 import { useVision, type VisionStatus } from '../lib/useVision'
 import { jointAngles, mainPerson, type FrameAnalysis } from '../lib/vision'
 import { frameAt, MAX_FRAMES, SAMPLE_STEP, toGameEvents } from '../lib/videoAnalysis'
@@ -28,7 +28,7 @@ type Tab = 'stats' | 'bio' | 'coach'
 type Panel = 'share' | 'download' | null
 
 const pill = 'inline-flex h-11 items-center gap-2 rounded-lg border bg-raised px-3 text-[13px] font-semibold text-ink'
-const square = 'inline-flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-raised text-ink'
+const labeled = 'inline-flex h-12 min-w-[68px] flex-col items-center justify-center gap-0.5 rounded-lg border border-line bg-raised px-2 text-[11px] text-mute'
 
 export default function Analysis() {
   const { sport, video } = useStore()
@@ -66,6 +66,7 @@ function AnalysisView() {
   const [range, setRange] = useState<[number, number]>(hasVideo ? [0, 10] : [Math.max(0, anchor - 0.5), Math.min(100, anchor + 0.5)])
   const [clipName, setClipName] = useState('')
   const [saved, setSaved] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
 
   useEffect(() => {
     if (!video?.playable) setMeta(null)
@@ -99,6 +100,38 @@ function AnalysisView() {
   const diagsIn = hasVideo ? [] : data.diags.filter((d) => inRange.includes(data.events[d.ev]))
   const clipSecs = (secs * (range[1] - range[0])) / 100
   const framePct = 100 / (secs * 30)
+
+  // La vista previa del recorte se detiene sola al llegar al final del tramo.
+  const previewEnd = range[1]
+  useEffect(() => {
+    if (!previewing) return
+    if (!playing || pos >= previewEnd) {
+      pb.pause()
+      setPreviewing(false)
+    }
+  }, [previewing, playing, pos, previewEnd, pb])
+
+  const minGap = Math.max(0.05, 100 / secs)
+  const changeRange = (next: [number, number]) => {
+    setRange(next)
+    setSaved(false)
+  }
+  const toggleClip = () => {
+    if (!clipOn) {
+      // El tramo inicial rodea el punto actual: 5 s antes y 5 s después.
+      const half = Math.min(50, (5 / secs) * 100)
+      const start = Math.max(0, Math.min(100 - 2 * half, pos - half))
+      setRange([start, start + 2 * half])
+    }
+    setPreviewing(false)
+    setClipOn(!clipOn)
+    setSaved(false)
+  }
+  const previewClip = () => {
+    seek(range[0])
+    pb.play()
+    setPreviewing(true)
+  }
 
   const toggleSlow = () => {
     pb.setSpeed(slow ? 1 : 0.25)
@@ -391,41 +424,41 @@ function AnalysisView() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 pt-3 pb-1">
-              <button type="button" aria-label="Evento anterior" onClick={() => jump(evIdx - 1)} className={square}>
-                <SkipBack size={18} aria-hidden="true" />
+              <button type="button" disabled={!events.length} onClick={() => jump(evIdx - 1)} className={labeled}>
+                <SkipBack size={18} className="text-ink" aria-hidden="true" />
+                Jugada anterior
               </button>
               <button
                 type="button"
                 aria-label={playing ? 'Pausar' : 'Reproducir'}
+                title={playing ? 'Pausar' : 'Reproducir'}
                 onClick={pb.toggle}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-lime text-lime-ink"
+                className="inline-flex h-12 w-14 items-center justify-center rounded-lg bg-lime text-lime-ink"
               >
                 {playing ? <Pause size={18} fill="currentColor" aria-hidden="true" /> : <Play size={18} fill="currentColor" aria-hidden="true" />}
               </button>
-              <button type="button" aria-label="Evento siguiente" onClick={() => jump(evIdx + 1)} className={square}>
-                <SkipForward size={18} aria-hidden="true" />
+              <button type="button" disabled={!events.length} onClick={() => jump(evIdx + 1)} className={labeled}>
+                <SkipForward size={18} className="text-ink" aria-hidden="true" />
+                Jugada siguiente
               </button>
-              <button
-                type="button"
-                aria-label="Cambiar velocidad de reproducción"
-                onClick={pb.cycleSpeed}
-                className="h-11 min-w-[60px] rounded-lg border border-line bg-raised px-3 font-mono text-[13px]"
-              >
-                {String(speed).replace('.', ',')}x
-              </button>
-              <button type="button" aria-pressed={slow} onClick={toggleSlow} className={cx(pill, slow ? 'border-ink' : 'border-line')}>
+              <div role="group" aria-label="Velocidad de reproducción" className="flex gap-0.5 rounded-[10px] border border-line bg-bg p-1">
+                {SPEEDS.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={v === speed}
+                    onClick={() => pb.setSpeed(v)}
+                    className={cx('h-10 min-w-11 rounded-[7px] px-2 font-mono text-xs font-bold', v === speed ? 'bg-line text-ink' : 'text-mute')}
+                  >
+                    {String(v).replace('.', ',')}x
+                  </button>
+                ))}
+              </div>
+              <button type="button" aria-pressed={slow} onClick={toggleSlow} className={cx(pill, 'h-12', slow ? 'border-ink' : 'border-line')}>
                 <Gauge size={16} aria-hidden="true" />
                 Cámara lenta
               </button>
-              <button
-                type="button"
-                aria-pressed={clipOn}
-                onClick={() => {
-                  setClipOn(!clipOn)
-                  setSaved(false)
-                }}
-                className={cx(pill, clipOn ? 'border-ink' : 'border-line')}
-              >
+              <button type="button" aria-pressed={clipOn} onClick={toggleClip} className={cx(pill, 'h-12', clipOn ? 'border-ink' : 'border-line')}>
                 <Scissors size={16} aria-hidden="true" />
                 Recortar
               </button>
@@ -452,7 +485,7 @@ function AnalysisView() {
               </div>
             </div>
 
-            <Timeline sport={data.id} events={events} legend={legend} pos={pos} evIdx={evIdx} time={time} onSeek={seek} range={clipOn ? range : null} />
+            <Timeline sport={data.id} events={events} legend={legend} pos={pos} evIdx={evIdx} time={time} secs={secs} onSeek={seek} range={clipOn ? range : null} minGap={minGap} onRange={changeRange} />
 
             {slow && (
               <div aria-label="Análisis en cámara lenta" className="mx-4 mb-3 flex flex-col gap-3 rounded-[10px] border border-line-strong bg-inset p-3.5">
@@ -497,17 +530,21 @@ function AnalysisView() {
             {clipOn && (
               <div aria-label="Recortar video" className="mx-4 mb-3 flex flex-col gap-3 rounded-[10px] border border-line-strong bg-inset p-3.5">
                 <div className="flex flex-wrap items-end gap-3">
-                  <RangeEnd label="Inicio" value={time(range[0])} onMark={() => { setRange([Math.min(pos, range[1] - 0.05), range[1]]); setSaved(false) }} />
-                  <RangeEnd label="Fin" value={time(range[1])} onMark={() => { setRange([range[0], Math.max(pos, range[0] + 0.05)]); setSaved(false) }} />
+                  <RangeEnd label="Empieza" value={time(range[0])} action="Empieza donde estoy" onMark={() => changeRange([Math.min(pos, range[1] - minGap), range[1]])} />
+                  <RangeEnd label="Termina" value={time(range[1])} action="Termina donde estoy" onMark={() => changeRange([range[0], Math.max(pos, range[0] + minGap)])} />
                   <div className="flex flex-col gap-1">
-                    <span className="text-xs text-mute">Duración</span>
+                    <span className="text-xs text-mute">Dura</span>
                     <span className="flex h-11 items-center font-mono text-[15px] font-bold">{fmtShort(clipSecs)}</span>
                   </div>
+                  <button type="button" onClick={previewClip} className={cx(pill, previewing ? 'border-ink' : 'border-line')}>
+                    <Play size={14} fill="currentColor" aria-hidden="true" />
+                    {previewing ? 'Viendo el recorte…' : 'Ver cómo queda'}
+                  </button>
                   <div className="flex min-w-0 flex-[1_1_220px] flex-col gap-1">
                     <label htmlFor="clip-name" className="text-xs text-mute">
                       Nombre del recorte
                     </label>
-                    <input id="clip-name" value={clipName} onChange={(e) => setClipName(e.target.value)} placeholder="Ej.: Tiro libre del #23" className={input} />
+                    <input id="clip-name" value={clipName} onChange={(e) => setClipName(e.target.value)} placeholder="Ponle un nombre, p. ej. Tiro libre del #23" className={input} />
                   </div>
                   <button type="button" onClick={saveClip} disabled={saved} className={btnPrimary}>
                     {saved ? 'Guardado' : 'Guardar recorte'}
@@ -590,6 +627,7 @@ function AnalysisView() {
                     <span className="text-[13px] text-mute">Método del análisis continuo</span>
                     <Segmented
                       label="Método del análisis continuo"
+                      className="max-w-full flex-wrap"
                       value={vision.engine}
                       onChange={vision.setEngine}
                       options={[
@@ -743,14 +781,14 @@ function RealPose({ analysis, aspect }: { analysis: FrameAnalysis | null; aspect
   )
 }
 
-function RangeEnd({ label, value, onMark }: { label: string; value: string; onMark: () => void }) {
+function RangeEnd({ label, value, action, onMark }: { label: string; value: string; action: string; onMark: () => void }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs text-mute">{label}</span>
       <div className="flex items-center gap-2">
         <span className="font-mono text-[15px] font-bold">{value}</span>
         <button type="button" onClick={onMark} className="h-11 rounded-lg border border-line bg-raised px-3 text-[13px]">
-          Marcar aquí
+          {action}
         </button>
       </div>
     </div>
@@ -793,34 +831,69 @@ interface TimelineProps {
   pos: number
   evIdx: number
   time: (pct: number) => string
+  secs: number
   onSeek: (pct: number) => void
   range: [number, number] | null
+  minGap: number
+  onRange: (r: [number, number]) => void
 }
 
-function Timeline({ sport, events, legend, pos, evIdx, time, onSeek, range }: TimelineProps) {
-  const seekAt = (e: PointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect()
-    onSeek(Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100)))
+const clampPct = (p: number) => Math.min(100, Math.max(0, p))
+
+function Timeline({ sport, events, legend, pos, evIdx, time, secs, onSeek, range, minGap, onRange }: TimelineProps) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [hover, setHover] = useState<number | null>(null)
+  const pctAt = (clientX: number) => {
+    const r = trackRef.current?.getBoundingClientRect()
+    return r ? clampPct(((clientX - r.left) / r.width) * 100) : 0
   }
+  /** Paso de teclado: 5 s, o 1 s con Mayús. */
+  const stepOf = (e: KeyboardEvent) => ((e.shiftKey ? 1 : 5) / secs) * 100
+  const arrow = (e: KeyboardEvent) => (e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0)
+
+  const setEnd = (i: 0 | 1, p: number) => {
+    if (!range) return
+    onRange(i === 0 ? [clampPct(Math.min(p, range[1] - minGap)), range[1]] : [range[0], clampPct(Math.max(p, range[0] + minGap))])
+  }
+
   return (
-    <div className="px-7 pb-3.5">
-      <div
-        title="Arrastra para moverte por el video"
-        className="relative h-11 cursor-grab touch-none select-none active:cursor-grabbing"
-        onPointerDown={(e) => {
-          if (e.button !== 0) return
-          e.currentTarget.setPointerCapture(e.pointerId)
-          seekAt(e)
-        }}
-        onPointerMove={(e) => {
-          if (e.currentTarget.hasPointerCapture(e.pointerId)) seekAt(e)
-        }}
-      >
-        <div className="absolute inset-x-0 top-5 h-1 rounded-sm bg-line" />
-        <div className="absolute top-5 left-0 h-1 rounded-sm bg-lime" style={{ width: `${pos}%` }} />
+    <div className="px-7 pt-6 pb-3.5">
+      <div ref={trackRef} className="relative h-11">
+        <div
+          role="slider"
+          tabIndex={0}
+          aria-label="Posición en el video"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pos)}
+          aria-valuetext={time(pos)}
+          className="absolute inset-0 cursor-grab touch-none rounded-md select-none active:cursor-grabbing"
+          onPointerDown={(e) => {
+            if (e.button !== 0) return
+            e.currentTarget.setPointerCapture(e.pointerId)
+            onSeek(pctAt(e.clientX))
+          }}
+          onPointerMove={(e) => {
+            const p = pctAt(e.clientX)
+            setHover(p)
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) onSeek(p)
+          }}
+          onPointerLeave={() => setHover(null)}
+          onKeyDown={(e) => {
+            const d = arrow(e)
+            if (d) onSeek(pos + d * stepOf(e))
+            else if (e.key === 'Home') onSeek(0)
+            else if (e.key === 'End') onSeek(100)
+            else return
+            e.preventDefault()
+          }}
+        >
+          <div className="absolute inset-x-0 top-5 h-1.5 rounded-full bg-line-strong" />
+          <div className="absolute top-5 left-0 h-1.5 rounded-full bg-lime" style={{ width: `${pos}%` }} />
+        </div>
         {range && (
           <div
-            className="absolute top-1.5 h-8 min-w-2 border-x-[3px] border-ink bg-ink/20"
+            className="pointer-events-none absolute top-1.5 h-8 border-y-2 border-lime bg-lime/15"
             style={{ left: `${range[0]}%`, width: `${range[1] - range[0]}%` }}
           />
         )}
@@ -835,16 +908,57 @@ function Timeline({ sport, events, legend, pos, evIdx, time, onSeek, range }: Ti
               aria-label={label}
               title={label}
               aria-pressed={on}
-              onPointerDown={(ev) => ev.stopPropagation()}
               onClick={() => onSeek(e.pct)}
-              className="absolute top-0 h-11 w-[26px] cursor-pointer -translate-x-1/2 rounded-md border-[1.5px] p-0 font-mono text-xs font-bold"
+              className="absolute top-0 h-11 w-[26px] -translate-x-1/2 cursor-pointer rounded-md border-[1.5px] p-0 font-mono text-xs font-bold"
               style={{ left: `${e.pct}%`, borderColor: color, background: on ? color : '#10151B', color: on ? '#090D10' : color }}
             >
               {e.code === 'G' && sport === 'basket' ? 'C' : e.code}
             </button>
           )
         })}
-        <div className="pointer-events-none absolute top-3 -ml-px h-5 w-0.5 bg-ink" style={{ left: `${pos}%` }} />
+        <div
+          className="pointer-events-none absolute top-[14px] h-[18px] w-[18px] -translate-x-1/2 rounded-full border-[3px] border-bg bg-ink"
+          style={{ left: `${pos}%` }}
+        />
+        {range &&
+          ([0, 1] as const).map((i) => (
+            <button
+              key={i}
+              type="button"
+              role="slider"
+              aria-label={i === 0 ? 'Inicio del recorte' : 'Fin del recorte'}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(range[i])}
+              aria-valuetext={time(range[i])}
+              title="Arrastra para ajustar el recorte"
+              className="absolute top-0 flex h-11 w-5 -translate-x-1/2 cursor-ew-resize touch-none items-center justify-center rounded-[5px] border-0 bg-lime p-0"
+              style={{ left: `${range[i]}%` }}
+              onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+              onPointerMove={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) setEnd(i, pctAt(e.clientX))
+              }}
+              onKeyDown={(e) => {
+                const d = arrow(e)
+                if (!d) return
+                setEnd(i, range[i] + d * stepOf(e))
+                e.preventDefault()
+              }}
+            >
+              <span className="h-4 w-0.5 rounded-full bg-lime-ink" />
+              <span className="pointer-events-none absolute -top-6 rounded bg-lime px-1.5 py-0.5 font-mono text-[11px] font-bold whitespace-nowrap text-lime-ink">
+                {time(range[i])}
+              </span>
+            </button>
+          ))}
+        {hover !== null && !range && (
+          <span
+            className="pointer-events-none absolute -top-6 -translate-x-1/2 rounded bg-ink px-1.5 py-0.5 font-mono text-[11px] font-bold whitespace-nowrap text-bg"
+            style={{ left: `${hover}%` }}
+          >
+            {time(hover)}
+          </span>
+        )}
       </div>
       <div className="mt-2.5 flex flex-wrap gap-4 text-xs text-mute">
         {legend.map(([code, label]) => (

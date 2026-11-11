@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export const SPEEDS = [1, 0.5, 0.25, 0.1]
+export const SPEEDS = [0.1, 0.25, 0.5, 1, 2]
 
 /**
  * Reloj de reproducción del visor. Sin video real avanza un reloj simulado;
@@ -44,7 +44,8 @@ export function usePlayback(initialPos: number) {
   }, [])
 
   const toggle = useCallback(() => setPlaying((p) => !p), [])
-  const cycleSpeed = useCallback(() => setSpeed((s) => SPEEDS[(SPEEDS.indexOf(s) + 1) % SPEEDS.length]), [])
+  const play = useCallback(() => setPlaying(true), [])
+  const pause = useCallback(() => setPlaying(false), [])
 
-  return { videoRef, pos, playing, speed, tick, seek, toggle, setSpeed, cycleSpeed }
+  return { videoRef, pos, playing, speed, tick, seek, toggle, play, pause, setSpeed }
 }
