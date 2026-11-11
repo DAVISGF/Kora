@@ -4,10 +4,11 @@
 
 import type { EvCode, GameEvent, Kpi, SportId } from '../data/sports'
 import { comma, fmtTime } from './util'
+import { disposeVideo, loadVideo, seekTo } from './videoFrames'
 import { grabFrame, jointAngles, MIN_KEYPOINT_CONF, requestVision, trackPersons, VisionError, type Box, type JointAngle, type Person } from './vision'
 
 /** Versión del formato de `VideoAnalysis`; al cambiarla se descartan los análisis guardados antiguos. */
-export const ANALYSIS_VERSION = 1
+export const ANALYSIS_VERSION = 2
 
 export const SAMPLE_STEP = 0.5 // segundos entre fotogramas
 export const MAX_FRAMES = 160 // 80 s de video por análisis
@@ -66,6 +67,8 @@ export const MAX_PEOPLE = 20
 export const SPRINT_THRESHOLD = 5
 
 export interface VideoAnalysis {
+  /** Deporte con el que se analizó; los eventos y el Coach dependen de él */
+  sport: SportId
   start: number
   end: number
   step: number
@@ -82,42 +85,11 @@ export interface VideoAnalysis {
   points: { x: number; y: number }[]
 }
 
-interface Progress {
+/** Avance del análisis: primero el video completo, después la técnica de cada jugador. */
+export interface ScanProgress {
+  stage: 'video' | 'tecnica'
   done: number
   total: number
-}
-
-function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const ok = () => {
-      cleanup()
-      resolve()
-    }
-    const fail = () => {
-      cleanup()
-      reject(new VisionError('failed', 'No se pudo leer el video.'))
-    }
-    const cleanup = () => {
-      video.removeEventListener('seeked', ok)
-      video.removeEventListener('error', fail)
-    }
-    video.addEventListener('seeked', ok)
-    video.addEventListener('error', fail)
-    video.currentTime = t
-  })
-}
-
-function loadVideo(url: string): Promise<HTMLVideoElement> {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    video.muted = true
-    video.playsInline = true
-    video.preload = 'auto'
-    video.crossOrigin = 'anonymous'
-    video.onloadeddata = () => resolve(video)
-    video.onerror = () => reject(new VisionError('failed', 'No se pudo abrir el video para analizarlo.'))
-    video.src = url
-  })
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -169,7 +141,7 @@ function needsRefine(a: AnalyzedFrame, b: AnalyzedFrame, aspect: number, sport: 
 export async function runVideoAnalysis(
   url: string,
   sport: SportId,
-  opts: { startSec: number; ball: boolean; onProgress: (p: Progress) => void; signal: AbortSignal },
+  opts: { startSec: number; ball: boolean; onProgress: (p: ScanProgress) => void; signal: AbortSignal },
 ): Promise<VideoAnalysis> {
   const video = await loadVideo(url)
   const duration = video.duration
@@ -202,7 +174,7 @@ export async function runVideoAnalysis(
         })
         .finally(() => {
           pending.delete(job)
-          opts.onProgress({ done: ++done, total })
+          opts.onProgress({ stage: 'video', done: ++done, total })
         })
       pending.add(job)
       if (pending.size >= CONCURRENCY) await Promise.race(pending)
@@ -224,10 +196,7 @@ export async function runVideoAnalysis(
     await pass(mid, false)
   }
 
-  const dispose = () => {
-    video.removeAttribute('src')
-    video.load()
-  }
+  const dispose = () => disposeVideo(video)
   if (opts.signal.aborted || failure) {
     dispose()
     if (opts.signal.aborted) throw new DOMException('Análisis cancelado', 'AbortError')
@@ -435,6 +404,7 @@ function summarize(frames: AnalyzedFrame[], sport: SportId, aspect: number, with
   ]
 
   return {
+    sport,
     start,
     end,
     step: COARSE_STEP,

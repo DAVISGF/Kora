@@ -67,18 +67,22 @@ export async function POST(request: Request): Promise<Response> {
   const key = process.env.ROBOFLOW_API_KEY
   if (!key) return json(501, { error: 'Falta la variable ROBOFLOW_API_KEY en el servidor.' })
 
-  const body = (await request.json().catch(() => null)) as { image?: unknown; ball?: unknown } | null
+  const body = (await request.json().catch(() => null)) as { image?: unknown; ball?: unknown; pose?: unknown } | null
   const image = body?.image
   if (typeof image !== 'string' || image.length < 100 || image.length > MAX_IMAGE_CHARS || !/^[A-Za-z0-9+/=]+$/.test(image)) {
     return json(400, { error: 'Se esperaba un fotograma JPEG en base64 de hasta 2 MB.' })
   }
 
-  const poseModel = process.env.ROBOFLOW_POSE_MODEL || 'coco-pose-detection/1'
+  // «precise» se usa en los recortes de una sola persona del análisis de técnica: menos volumen, más exactitud.
+  const precise = body?.pose === 'precise'
+  const poseModel = precise
+    ? process.env.ROBOFLOW_POSE_MODEL_PRECISE || 'coco-pose-detection/3'
+    : process.env.ROBOFLOW_POSE_MODEL || 'coco-pose-detection/1'
   const objectModel = process.env.ROBOFLOW_OBJECT_MODEL || 'coco/25'
 
   try {
     const [pose, objects] = await Promise.all([
-      infer(poseModel, image, key, 40),
+      infer(poseModel, image, key, precise ? 30 : 40),
       body?.ball === true ? infer(objectModel, image, key, 20) : Promise.resolve(null),
     ])
 

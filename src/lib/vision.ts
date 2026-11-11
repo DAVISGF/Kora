@@ -66,13 +66,13 @@ export interface RawFrame {
 }
 
 /** Envía un fotograma ya capturado al servicio de visión. */
-export async function requestVision(image: string, ball: boolean, signal?: AbortSignal): Promise<RawFrame> {
+export async function requestVision(image: string, ball: boolean, signal?: AbortSignal, pose: 'fast' | 'precise' = 'fast'): Promise<RawFrame> {
   let res: Response
   try {
     res = await fetch('/api/vision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image, ball }),
+      body: JSON.stringify({ image, ball, pose }),
       signal,
     })
   } catch (e) {

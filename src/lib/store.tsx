@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ANALYSIS_VERSION, type VideoAnalysis } from './videoAnalysis'
+import { ANALYSIS_VERSION, runVideoAnalysis, type ScanProgress, type VideoAnalysis } from './videoAnalysis'
+import { VisionError } from './vision'
 import { clearAnalysis, clearStoredVideo, getAnalysis, getVideo, putAnalysis, putVideo } from './videoStore'
 import { SPORTS, type Phase, type Severity, type SportData, type SportId } from '../data/sports'
 
@@ -57,6 +58,12 @@ interface Store {
   /** KPIs y eventos medidos en el video cargado; se pierde al cambiar de video */
   videoAnalysis: VideoAnalysis | null
   setVideoAnalysis: (v: VideoAnalysis | null) => void
+  /** Avance del análisis en curso, o null si no hay ninguno */
+  scan: ScanProgress | null
+  scanError: string
+  /** Analiza el video cargado: KPIs, eventos y técnica. Sigue aunque se cambie de pantalla. */
+  startScan: (opts: { startSec: number; ball: boolean }) => void
+  cancelScan: () => void
   cams: number
   setCams: (n: number) => void
   clips: Clip[]
@@ -139,13 +146,20 @@ function usePersisted<T>(key: string, initial: T) {
 const Ctx = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [sport, setSport] = usePersisted<SportId>('kora.sport', 'basket')
+  const [sport, setSportState] = usePersisted<SportId>('kora.sport', 'basket')
   const [video, setVideoState] = useState<VideoSource | null>(null)
   const [videoAnalysis, setVideoAnalysisState] = useState<VideoAnalysis | null>(null)
   const [restoring, setRestoring] = useState(true)
   const current = useRef<VideoSource | null>(null)
 
+  const [scan, setScan] = useState<ScanProgress | null>(null)
+  const [scanError, setScanError] = useState('')
+  const scanCtrl = useRef<AbortController | null>(null)
+  const cancelScan = useCallback(() => scanCtrl.current?.abort(), [])
+
   const replaceVideo = useCallback((v: VideoSource | null) => {
+    scanCtrl.current?.abort()
+    setScanError('')
     const old = current.current
     if (old?.url.startsWith('blob:') && old.url !== v?.url) URL.revokeObjectURL(old.url)
     current.current = v
@@ -179,6 +193,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     else void clearAnalysis()
   }, [])
 
+  const sportRef = useRef(sport)
+  sportRef.current = sport
+
+  const startScan = useCallback(
+    (opts: { startSec: number; ball: boolean }) => {
+      const v = current.current
+      if (!v?.playable || scanCtrl.current) return
+      const ctrl = new AbortController()
+      scanCtrl.current = ctrl
+      setScanError('')
+      setScan({ stage: 'video', done: 0, total: 0 })
+      runVideoAnalysis(v.url, sportRef.current, { ...opts, onProgress: setScan, signal: ctrl.signal })
+        .then((a) => {
+          if (current.current === v && !ctrl.signal.aborted) setVideoAnalysis(a)
+        })
+        .catch((e: unknown) => {
+          if ((e as Error).name !== 'AbortError') setScanError(e instanceof VisionError ? e.message : 'No se pudo analizar el video.')
+        })
+        .finally(() => {
+          if (scanCtrl.current === ctrl) scanCtrl.current = null
+          setScan(null)
+        })
+    },
+    [setVideoAnalysis],
+  )
+
+  // Los eventos y el Coach dependen del deporte: al cambiarlo, el análisis anterior deja de valer.
+  const setSport = useCallback(
+    (s: SportId) => {
+      if (s === sportRef.current) return
+      scanCtrl.current?.abort()
+      setSportState(s)
+      setVideoAnalysis(null)
+    },
+    [setSportState, setVideoAnalysis],
+  )
+
   // Al abrir la app se recupera el último video y, si sigue siendo válido, su análisis.
   useEffect(() => {
     let alive = true
@@ -190,8 +241,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         current.current = v
         setVideoState(v)
         const saved = await getAnalysis()
-        if (alive && current.current === v && saved?.videoKey === stored.key && saved.version === ANALYSIS_VERSION) {
-          setVideoAnalysisState(saved.analysis as VideoAnalysis)
+        const analysis = saved?.analysis as VideoAnalysis | undefined
+        if (alive && current.current === v && saved?.videoKey === stored.key && saved.version === ANALYSIS_VERSION && analysis?.sport === sportRef.current) {
+          setVideoAnalysisState(analysis)
         }
       }
       if (alive) setRestoring(false)
@@ -209,8 +261,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addHistory = useCallback((h: HistoryItem) => setHistory((prev) => [h, ...prev]), [setHistory])
 
   const value = useMemo<Store>(
-    () => ({ sport, data: SPORTS[sport], setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, cams, setCams, clips, addClip, removeClip, history, addHistory }),
-    [sport, setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, cams, clips, addClip, removeClip, history, addHistory],
+    () => ({ sport, data: SPORTS[sport], setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, scan, scanError, startScan, cancelScan, cams, setCams, clips, addClip, removeClip, history, addHistory }),
+    [sport, setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, scan, scanError, startScan, cancelScan, cams, clips, addClip, removeClip, history, addHistory],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
