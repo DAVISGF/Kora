@@ -282,7 +282,7 @@ export default function HelpdeskConsole() {
             key={a.id}
             type="button"
             onClick={() => navigate(`/admin/soporte/${a.payload.code}`)}
-            className={cx(card, 'pointer-events-auto flex gap-3 border-l-4 p-3 text-left shadow-xl shadow-black/50', a.kind === 'escalation' ? 'border-l-danger' : 'border-l-info')}
+            className={cx(card, 'pointer-events-auto flex gap-3 p-3 text-left shadow-xl shadow-black/50', a.kind === 'escalation' ? 'border-danger/50' : 'border-info/50')}
           >
             {a.kind === 'escalation' ? <AlertTriangle size={20} className="shrink-0 text-danger" aria-hidden="true" /> : <MessageCircle size={20} className="shrink-0 text-info" aria-hidden="true" />}
             <span className="flex min-w-0 flex-col gap-0.5">
