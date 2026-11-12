@@ -21,6 +21,8 @@ npm run dev
 | `/jugadas` | Informe de jugadas clave y ejercicios |
 | `/historial` | Análisis guardados |
 | `/recortes` | Recortes guardados, con su análisis y exportación |
+| `/soporte` | Mis casos de soporte (Kilo IA + WhatsApp) |
+| `/admin/soporte` | Kilora Admin Console · Helpdesk |
 
 ## Visión por computadora real
 
@@ -117,3 +119,8 @@ Está simulado con datos de ejemplo (`src/data/sports.ts`):
 - El procesamiento de la ingesta y la reproducción de YouTube, HLS o RTMP.
 - Las cámaras 2 y 3 (reencuadran el mismo fotograma) y la vista 3D.
 - La exportación de video (MP4), que necesita un servicio de render.
+
+## Soporte omnicanal (Kilo IA + WhatsApp)
+
+Helpdesk con triaje de Kilo IA, escalamiento a humano, WhatsApp, panel del cliente y consola de agentes.
+Arquitectura, esquema, flujo y puesta en marcha: [`docs/helpdesk.md`](docs/helpdesk.md).
