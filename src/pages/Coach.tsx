@@ -5,8 +5,10 @@ import { EvidencePhoto, FocusCard, GoodRow, PolishCard } from '../components/Coa
 import { btnGhost, btnPrimary, card, eyebrow, PageHeader } from '../components/ui'
 import { countNoun, DISCLAIMER, NEXT_CHALLENGE } from '../lib/coach/content'
 import type { CoachReport, PersonCoach } from '../lib/coach/types'
+import { isLabeled, personLabel } from '../lib/people'
 import { coachReportMd } from '../lib/report'
 import { useStore } from '../lib/store'
+import type { PersonStats } from '../lib/videoAnalysis'
 import { cx, downloadText, fmtClock, videoSlug } from '../lib/util'
 
 const ACTION_LABEL: Record<string, string> = { shot: 'Tiro', kick: 'Golpeo', run: 'Carrera' }
@@ -18,9 +20,13 @@ const HOW_TO_FILM = [
 ]
 
 export default function Coach() {
-  const { data, video, restoring, videoAnalysis, scan, scanError, startScan, cancelScan } = useStore()
+  const { data, video, restoring, videoAnalysis, scan, scanError, startScan, cancelScan, analyzePerson } = useStore()
   const hasVideo = !!video?.playable
   const report = videoAnalysis?.coach ?? null
+  const people = videoAnalysis?.people ?? []
+  // Solo quien tiene etiqueta aparece con nombre; el resto sigue como «Jugador 1».
+  const names = new Map(people.filter(isLabeled).map((p) => [p.id, personLabel(p)]))
+  const chosen = people.find((p) => p.id === videoAnalysis?.coachFocus?.[0])
 
   return (
     <main className="mx-auto flex max-w-[1040px] flex-col gap-6 px-5 pt-8 pb-10">
@@ -31,7 +37,7 @@ export default function Coach() {
             : 'El Coach mira tu video y te dice, con tus propias fotos, qué haces bien y qué mejorar primero.'}
         </PageHeader>
         {report && video && report.people.length > 0 && (
-          <button type="button" className={btnGhost} onClick={() => downloadText(`${videoSlug(video.name)}-coach.md`, coachReportMd(report, video.name, data.label), 'text/markdown')}>
+          <button type="button" className={btnGhost} onClick={() => downloadText(`${videoSlug(video.name)}-coach.md`, coachReportMd(report, video.name, data.label, names), 'text/markdown')}>
             <Download size={16} aria-hidden="true" />
             Descargar informe
           </button>
@@ -50,12 +56,16 @@ export default function Coach() {
         <section className={cx(card, 'flex flex-col items-start gap-3 p-5')}>
           <h2 className="m-0 text-xl font-semibold">No pudimos medir la técnica</h2>
           <p className="m-0 max-w-[60ch] text-[15px] text-mute">{videoAnalysis.coachError ?? 'El análisis del video terminó, pero la parte de técnica no.'}</p>
-          <button type="button" className={btnPrimary} onClick={() => startScan({ startSec: 0, ball: true })}>
+          <button type="button" className={btnPrimary} onClick={() => (chosen ? analyzePerson(chosen.id) : startScan({ startSec: 0, ball: true }))}>
             Volver a intentarlo
           </button>
         </section>
       ) : (
-        <Report report={report} />
+        <Report report={report} names={names} chosen={chosen ? personLabel(chosen) : null} />
+      )}
+
+      {hasVideo && !restoring && !scan && videoAnalysis && people.length > 1 && (
+        <PersonPicker people={people} current={report?.people.map((p) => p.personId) ?? []} error={scanError} onPick={analyzePerson} />
       )}
 
       <p className="m-0 border-t border-line pt-4 text-[13px] text-mute">
@@ -161,7 +171,50 @@ function FilmTips({ tips, className }: { tips: string[]; className?: string }) {
   )
 }
 
-function Report({ report }: { report: CoachReport }) {
+/** Para elegir a mano de quién es el informe: el Coach, por su cuenta, mide a los que más se ven. */
+function PersonPicker({ people, current, error, onPick }: { people: PersonStats[]; current: number[]; error: string; onPick: (id: number) => void }) {
+  return (
+    <section aria-labelledby="coach-pick" className={cx(card, 'flex flex-col gap-3 p-5')}>
+      <div className="flex flex-col gap-1">
+        <h2 id="coach-pick" className={eyebrow}>
+          Elige a quién medir
+        </h2>
+        <p className="m-0 max-w-[62ch] text-[15px] text-mute">
+          Estas son las personas que seguimos en el video. Pulsa una y mido solo su técnica. Para ponerle nombre y dorsal, ábrela en{' '}
+          <Link to="/analisis" className="font-semibold text-lime">
+            Video
+          </Link>
+          .
+        </p>
+      </div>
+      <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+        {people.map((p) => {
+          const on = current.includes(p.id)
+          return (
+            <li key={p.id}>
+              <button
+                type="button"
+                aria-pressed={on}
+                onClick={() => onPick(p.id)}
+                className={cx('flex h-14 max-w-[220px] items-center gap-2.5 rounded-xl border bg-card pr-4 pl-1.5 text-[15px] font-semibold', on ? 'border-lime text-ink' : 'border-line text-mute')}
+              >
+                {p.thumb ? <img src={p.thumb} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover object-top" /> : <span className="h-11 w-11 shrink-0 rounded-lg bg-raised" />}
+                <span className="truncate">{personLabel(p)}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {error && (
+        <p role="alert" className="m-0 rounded-lg border border-danger px-3 py-2 text-[13px] text-danger">
+          {error}
+        </p>
+      )}
+    </section>
+  )
+}
+
+function Report({ report, names, chosen }: { report: CoachReport; names: Map<number, string>; chosen: string | null }) {
   const [index, setIndex] = useState(0)
   const person = report.people[Math.min(index, report.people.length - 1)]
 
@@ -169,8 +222,9 @@ function Report({ report }: { report: CoachReport }) {
     return (
       <section className={cx(card, 'flex flex-wrap gap-x-10 gap-y-6 p-6')}>
         <div className="flex min-w-0 flex-[2_1_340px] flex-col items-start gap-3">
+          {chosen && <span className={eyebrow}>Elegiste a {chosen}</span>}
           <h2 className="m-0 text-xl leading-snug font-semibold">{report.empty ?? 'No reconocimos ningún gesto para analizar en este video.'}</h2>
-          <p className="m-0 max-w-[52ch] text-[15px] text-mute">Prueba con otro video siguiendo estos consejos.</p>
+          <p className="m-0 max-w-[52ch] text-[15px] text-mute">{chosen ? 'Elige a otra persona más abajo, o prueba con otro video siguiendo estos consejos.' : 'Prueba con otro video siguiendo estos consejos.'}</p>
           <Link to="/" className={btnPrimary}>
             <Upload size={16} strokeWidth={2.2} aria-hidden="true" />
             Subir otro video
@@ -194,11 +248,12 @@ function Report({ report }: { report: CoachReport }) {
               className={cx('flex h-14 items-center gap-2.5 rounded-xl border bg-card pr-4 pl-1.5 text-[15px] font-semibold', i === index ? 'border-lime text-ink' : 'border-line text-mute')}
             >
               {p.thumb ? <img src={p.thumb} alt="" className="h-11 w-11 rounded-lg object-cover object-top" /> : <span className="h-11 w-11 rounded-lg bg-raised" />}
-              Jugador {i + 1}
+              <span className="max-w-[160px] truncate">{names.get(p.personId) ?? `Jugador ${i + 1}`}</span>
             </button>
           ))}
         </div>
       )}
+      {names.has(person.personId) && report.people.length === 1 && <p className={cx(eyebrow, 'm-0')}>Informe de {names.get(person.personId)}</p>}
       <PersonReport person={person} key={person.personId} />
       {report.tips.length > 0 && (
         <section className={cx(card, 'p-5')}>

@@ -70,6 +70,14 @@ Los textos están escritos para jugadores desde los 12 años. Las pruebas (`read
 el índice de Szigriszt-Pazos y exigen el nivel «bastante fácil» de la escala INFLESZ, frases de 16 palabras como
 mucho y nada de jerga.
 
+### Etiquetar a un jugador y elegir a quién medir
+
+En `/analisis`, pulsa a una persona sobre el video (o su fila en «Rendimiento por jugador») para abrir su ficha y
+ponerle **nombre y dorsal**. La etiqueta se ve sobre el video, en las barras, en el Coach y en el informe descargable.
+Desde la ficha, o en «Elige a quién medir» de `/coach`, se le pide al Coach que mida **solo a esa persona**: reutiliza
+la pasada general, así que no vuelve a gastar inferencias en el video completo. La etiqueta vale para ese análisis:
+al volver a analizar el video, el seguimiento reparte números nuevos.
+
 Límites conocidos: no reconoce todavía entradas al aro, pases, regates ni defensa; el seguimiento puede confundir
 a dos jugadores que se cruzan; un video a cámara lenta se mide igual, pero sin cadencia de carrera; y de un
 golpeo visto de frente solo se mide el final.

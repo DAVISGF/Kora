@@ -45,6 +45,8 @@ export interface CollectOptions {
   budget?: number
   /** Buscar también el balón en cada recorte */
   ball?: boolean
+  /** Personas elegidas a mano; sin esto se mide a las que más se ven */
+  only?: number[]
   /**
    * Instantes que merecen verse fotograma a fotograma (un golpeo dura décimas de
    * segundo). Se llama con las series ya medidas a la cadencia base.
@@ -66,7 +68,7 @@ function distinct(frames: PoseFrame[]): PoseFrame[] {
 
 /** Mide la pose densa de los protagonistas del video. */
 export async function collectSeries(video: HTMLVideoElement, coarse: Coarse, opts: CollectOptions): Promise<Collected> {
-  const { chosen, tooSmall } = pickProtagonists(buildTracks(coarse.frames))
+  const { chosen, tooSmall } = pickProtagonists(buildTracks(coarse.frames), undefined, opts.only)
   const budget = opts.budget ?? DENSE_BUDGET
   const tracks = new Map(chosen.map((t) => [t.id, t.samples]))
   const base = planWindows(chosen, coarse.events, coarse.sport, { budget: Math.round(budget * (1 - REFINE_SHARE)), start: coarse.start, end: coarse.end })
@@ -143,11 +145,12 @@ function crowded(track: Track, frames: CoarseFrame[]): boolean {
 export async function runCoach(
   video: HTMLVideoElement,
   coarse: Coarse,
-  opts: { signal: AbortSignal; onProgress: (done: number, total: number) => void },
+  opts: { signal: AbortSignal; onProgress: (done: number, total: number) => void; only?: number[] },
 ): Promise<CoachReport> {
   const collected = await collectSeries(video, coarse, {
     signal: opts.signal,
     onProgress: opts.onProgress,
+    only: opts.only,
     ball: true,
     // Un golpeo dura décimas de segundo: alrededor de cada uno se miran todos los fotogramas.
     refine: coarse.sport === 'futbol' ? (series) => series.flatMap((s) => kickCandidates(cleanSeries(s)).map((t) => ({ personId: s.personId, t }))) : undefined,

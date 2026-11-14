@@ -92,11 +92,13 @@ function findingMd(f: Finding): string[] {
 }
 
 /** El informe del AI Coach medido en el video, en Markdown. */
-export function coachReportMd(report: CoachReport, name: string, sportLabel: string): string {
+/** `names` lleva la etiqueta que se le puso a cada persona (nombre o dorsal), si tiene. */
+export function coachReportMd(report: CoachReport, name: string, sportLabel: string, names?: Map<number, string>): string {
   const lines = [`# AI Coach · ${name}`, sportLabel, `> ${DISCLAIMER}`, '']
   if (report.empty) lines.push(report.empty, '')
   report.people.forEach((p, i) => {
-    if (report.people.length > 1) lines.push(`# Jugador ${i + 1}`, '')
+    const who = names?.get(p.personId)
+    if (who || report.people.length > 1) lines.push(`# ${who ?? `Jugador ${i + 1}`}`, '')
     lines.push(p.headline, '', ...p.extras, '')
     if (p.focus) lines.push('## Tu foco', ...findingMd(p.focus))
     if (p.polish.length) lines.push('## Para después', ...p.polish.flatMap(findingMd))

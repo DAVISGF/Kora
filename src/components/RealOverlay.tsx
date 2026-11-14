@@ -11,10 +11,14 @@ interface Props {
   /** Tamaño natural del video; el SVG lo usa como sistema de coordenadas */
   width: number
   height: number
+  /** Etiqueta de cada persona seguida (nombre o dorsal); sin ella se muestra su número */
+  names?: Map<number, string>
+  /** Abre la ficha de la persona al pulsar su etiqueta */
+  onPick?: (id: number) => void
 }
 
 /** Dibuja sobre el video las detecciones reales devueltas por el servicio de visión. */
-export default function RealOverlay({ analysis, layers, width, height }: Props) {
+export default function RealOverlay({ analysis, layers, width, height, names, onPick }: Props) {
   // Unidad de trazo y texto proporcional al video, para que se vea igual en 480p que en 4K.
   const u = width / 960
   const main = mainPerson(analysis.persons)
@@ -71,15 +75,40 @@ export default function RealOverlay({ analysis, layers, width, height }: Props) 
         analysis.persons.map((p) => {
           const x = p.box.x * width
           const y = p.box.y * height
-          const label = `#${p.id} · ${Math.round(p.conf * 100)} %`
+          const named = names?.get(p.id)
+          const label = named ?? `#${p.id} · ${Math.round(p.conf * 100)} %`
           const chipW = (label.length * 7.4 + 8) * u
+          const chipY = Math.max(0, y - 20 * u)
           return (
             <g key={`t${p.id}`}>
               <rect x={x} y={y} width={p.box.w * width} height={p.box.h * height} fill="none" stroke={TRACK} strokeWidth={2 * u} />
-              <rect x={x} y={Math.max(0, y - 20 * u)} width={chipW} height={18 * u} fill={TRACK} />
-              <text x={x + 4 * u} y={Math.max(0, y - 20 * u) + 13 * u} fill="#0F1405" fontFamily="JetBrains Mono, monospace" fontSize={12 * u} fontWeight="700">
+              <rect x={x} y={chipY} width={chipW} height={18 * u} fill={TRACK} />
+              <text x={x + 4 * u} y={chipY + 13 * u} fill="#0F1405" fontFamily="JetBrains Mono, monospace" fontSize={12 * u} fontWeight="700">
                 {label}
               </text>
+              {onPick && (
+                // Zona de toque más grande que la etiqueta: cubre también la caja de la persona.
+                <rect
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Abrir la ficha de ${named ?? `la persona #${p.id}`}`}
+                  x={x}
+                  y={chipY}
+                  width={Math.max(chipW, p.box.w * width)}
+                  height={y - chipY + p.box.h * height}
+                  fill="transparent"
+                  className="cursor-pointer outline-offset-2 focus-visible:outline-2 focus-visible:outline-white"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onPick(p.id)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return
+                    e.preventDefault()
+                    onPick(p.id)
+                  }}
+                />
+              )}
             </g>
           )
         })}

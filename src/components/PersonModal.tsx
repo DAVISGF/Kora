@@ -1,12 +1,13 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Play, X } from 'lucide-react'
+import { Check, Play, Sparkles, X } from 'lucide-react'
 import { EVENT_COLOR } from '../data/sports'
 import type { Finding, PersonCoach } from '../lib/coach/types'
 import { SPRINT_THRESHOLD, type PersonStats } from '../lib/videoAnalysis'
+import { cleanLabel, isLabeled, MAX_NAME, MAX_NUMBER, personLabel } from '../lib/people'
 import { comma, fmtClock, fmtShort, fmtTime } from '../lib/util'
 import { STATUS_COLOR } from './CoachViews'
-import { eyebrow } from './ui'
+import { btnGhost, eyebrow, input } from './ui'
 
 interface Props {
   person: PersonStats
@@ -15,6 +16,10 @@ interface Props {
   /** Salta el visor a ese segundo del video */
   onSeek: (t: number) => void
   onClose: () => void
+  /** Guarda el nombre y el dorsal; vacíos, se los quita */
+  onLabel: (name: string, number: string) => void
+  /** Pide al AI Coach que mida la técnica de esta persona; sin él, no se ofrece */
+  onAnalyze?: () => void
 }
 
 function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
@@ -28,8 +33,20 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
 }
 
 /** Ficha de una persona seguida en el video: foto, estadísticas y lo detectado sobre ella. */
-export default function PersonModal({ person, coach, onSeek, onClose }: Props) {
+export default function PersonModal({ person, coach, onSeek, onClose, onLabel, onAnalyze }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
+  const [name, setName] = useState(person.name ?? '')
+  const [number, setNumber] = useState(person.number ?? '')
+  const [savedAt, setSavedAt] = useState(0)
+  const typed = cleanLabel(name, number)
+  const dirty = (typed.name ?? '') !== (person.name ?? '') || (typed.number ?? '') !== (person.number ?? '')
+  const save = () => {
+    onLabel(name, number)
+    // Los campos quedan como se guardó: sin espacios de más.
+    setName(typed.name ?? '')
+    setNumber(typed.number ?? '')
+    setSavedAt(Date.now())
+  }
 
   useEffect(() => {
     const dialog = ref.current
@@ -53,9 +70,11 @@ export default function PersonModal({ person, coach, onSeek, onClose }: Props) {
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
         <div className="flex min-w-0 flex-col">
           <h2 id="person-title" className="m-0 text-xl font-semibold">
-            Persona #{person.id}
+            {personLabel(person)}
           </h2>
-          <span className="text-xs text-mute">Identificador del seguimiento, no el dorsal · en cuadro del {fmtTime(person.firstT)} al {fmtTime(person.lastT)}</span>
+          <span className="text-xs text-mute">
+            {isLabeled(person) ? `Persona #${person.id} del seguimiento` : 'Identificador del seguimiento, no el dorsal'} · en cuadro del {fmtTime(person.firstT)} al {fmtTime(person.lastT)}
+          </span>
         </div>
         <button type="button" aria-label="Cerrar" onClick={() => ref.current?.close()} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-raised text-ink">
           <X size={18} aria-hidden="true" />
@@ -66,7 +85,7 @@ export default function PersonModal({ person, coach, onSeek, onClose }: Props) {
         <div className="flex flex-[1_1_220px] flex-col gap-2">
           <div className="flex min-h-[220px] items-center justify-center overflow-hidden rounded-lg border border-line bg-bg">
             {person.thumb ? (
-              <img src={person.thumb} alt={`Recorte de la persona #${person.id} en el segundo ${fmtTime(person.thumbT)}`} className="max-h-[420px] w-full object-contain" />
+              <img src={person.thumb} alt={`Recorte de ${personLabel(person)} en el segundo ${fmtTime(person.thumbT)}`} className="max-h-[420px] w-full object-contain" />
             ) : (
               <span className="p-4 text-center text-[13px] text-mute">No se pudo recortar la imagen de esta persona.</span>
             )}
@@ -78,6 +97,54 @@ export default function PersonModal({ person, coach, onSeek, onClose }: Props) {
         </div>
 
         <div className="flex min-w-0 flex-[2_1_380px] flex-col gap-4">
+          <form
+            aria-label="Etiqueta del jugador"
+            className="flex flex-col gap-2 rounded-lg border border-line-strong bg-inset p-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              save()
+            }}
+          >
+            <span className={eyebrow}>¿Quién es?</span>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex min-w-0 flex-[3_1_180px] flex-col gap-1 text-[13px] text-mute">
+                Nombre
+                <input className={input} value={name} maxLength={MAX_NAME} autoComplete="off" placeholder="Por ejemplo, L. Vidal" onChange={(e) => setName(e.target.value)} />
+              </label>
+              <label className="flex min-w-0 flex-[1_1_80px] flex-col gap-1 text-[13px] text-mute">
+                Dorsal
+                <input className={`${input} font-mono`} value={number} maxLength={MAX_NUMBER} inputMode="numeric" autoComplete="off" placeholder="10" onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))} />
+              </label>
+              <button type="submit" disabled={!dirty} className={`${btnGhost} disabled:opacity-50`}>
+                Guardar
+              </button>
+            </div>
+            <span role="status" className="flex min-h-5 items-center gap-1.5 text-xs text-mute">
+              {savedAt > 0 && !dirty ? (
+                <>
+                  <Check size={14} className="text-ok" aria-hidden="true" />
+                  Guardado. Lo verás en el video, en las barras y en el informe.
+                </>
+              ) : (
+                'La etiqueta vale para este análisis. El seguimiento puede confundir a dos jugadores que se cruzan.'
+              )}
+            </span>
+          </form>
+
+          {onAnalyze && (
+            <button
+              type="button"
+              className={`${btnGhost} self-start`}
+              onClick={() => {
+                if (dirty) onLabel(name, number)
+                onAnalyze()
+              }}
+            >
+              <Sparkles size={16} aria-hidden="true" />
+              {coach ? 'Volver a medir su técnica' : 'Medir su técnica con el AI Coach'}
+            </button>
+          )}
+
           <section aria-label="Estadísticas" className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
             <Stat label="Distancia (est.)" value={`${Math.round(person.meters)} m`} />
             <Stat label="Vel. máxima (est.)" value={`${comma(person.topSpeed)} m/s`} />

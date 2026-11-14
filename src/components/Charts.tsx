@@ -42,7 +42,7 @@ export function PerfBars({ data, values, unit = '%', who = 'Jugador', onSelect }
       {data.perf.map(([player, pct], i) => {
         const cells = (
           <>
-            <span className="text-left text-[13px]">
+            <span className="truncate text-left text-[13px]" title={`${who} ${player}`.trim()}>
               {who} {player}
             </span>
             <div className="h-3.5 rounded bg-raised">
@@ -54,11 +54,11 @@ export function PerfBars({ data, values, unit = '%', who = 'Jugador', onSelect }
           </>
         )
         return onSelect ? (
-          <button key={player} type="button" onClick={() => onSelect(i)} className={`${row} -mx-2 min-h-11 rounded-lg px-2 text-ink hover:bg-raised`}>
+          <button key={`${i}-${player}`} type="button" onClick={() => onSelect(i)} className={`${row} -mx-2 min-h-11 rounded-lg px-2 text-ink hover:bg-raised`}>
             {cells}
           </button>
         ) : (
-          <div key={player} className={row}>
+          <div key={`${i}-${player}`} className={row}>
             {cells}
           </div>
         )

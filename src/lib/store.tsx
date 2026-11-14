@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ANALYSIS_VERSION, runVideoAnalysis, type ScanProgress, type VideoAnalysis } from './videoAnalysis'
+import { cleanLabel } from './people'
+import { ANALYSIS_VERSION, runCoachFor, runVideoAnalysis, type ScanProgress, type VideoAnalysis } from './videoAnalysis'
 import { VisionError } from './vision'
 import { clearAnalysis, clearStoredVideo, getAnalysis, getVideo, putAnalysis, putVideo } from './videoStore'
 import { SPORTS, type Phase, type Severity, type SportData, type SportId } from '../data/sports'
@@ -64,6 +65,10 @@ interface Store {
   /** Analiza el video cargado: KPIs, eventos y técnica. Sigue aunque se cambie de pantalla. */
   startScan: (opts: { startSec: number; ball: boolean }) => void
   cancelScan: () => void
+  /** Pone nombre y dorsal a una persona seguida en el video; vacíos, se los quita */
+  labelPerson: (id: number, name: string, number: string) => void
+  /** Vuelve a medir la técnica, solo de la persona elegida. Conserva el resto del análisis. */
+  analyzePerson: (id: number) => void
   cams: number
   setCams: (n: number) => void
   clips: Clip[]
@@ -195,6 +200,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const sportRef = useRef(sport)
   sportRef.current = sport
+  const analysisRef = useRef(videoAnalysis)
+  analysisRef.current = videoAnalysis
+
+  const labelPerson = useCallback(
+    (id: number, name: string, number: string) => {
+      const a = analysisRef.current
+      if (!a) return
+      const label = cleanLabel(name, number)
+      setVideoAnalysis({ ...a, people: a.people.map((p) => (p.id === id ? { ...p, ...label } : p)) })
+    },
+    [setVideoAnalysis],
+  )
+
+  const analyzePerson = useCallback(
+    (id: number) => {
+      const v = current.current
+      const a = analysisRef.current
+      if (!v?.playable || !a || scanCtrl.current) return
+      const ctrl = new AbortController()
+      scanCtrl.current = ctrl
+      setScanError('')
+      setScan({ stage: 'tecnica', done: 0, total: 0 })
+      runCoachFor(v.url, a, [id], { onProgress: setScan, signal: ctrl.signal })
+        .then((next) => {
+          if (current.current !== v || ctrl.signal.aborted) return
+          // Los nombres puestos mientras se medía no se pierden: mandan las fichas actuales.
+          const now = analysisRef.current
+          setVideoAnalysis(now ? { ...next, people: now.people } : next)
+        })
+        .catch((e: unknown) => {
+          if ((e as Error).name !== 'AbortError') setScanError('No se pudo medir la técnica de esa persona.')
+        })
+        .finally(() => {
+          if (scanCtrl.current === ctrl) scanCtrl.current = null
+          setScan(null)
+        })
+    },
+    [setVideoAnalysis],
+  )
 
   const startScan = useCallback(
     (opts: { startSec: number; ball: boolean }) => {
@@ -261,8 +305,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addHistory = useCallback((h: HistoryItem) => setHistory((prev) => [h, ...prev]), [setHistory])
 
   const value = useMemo<Store>(
-    () => ({ sport, data: SPORTS[sport], setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, scan, scanError, startScan, cancelScan, cams, setCams, clips, addClip, removeClip, history, addHistory }),
-    [sport, setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, scan, scanError, startScan, cancelScan, cams, clips, addClip, removeClip, history, addHistory],
+    () => ({ sport, data: SPORTS[sport], setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, scan, scanError, startScan, cancelScan, labelPerson, analyzePerson, cams, setCams, clips, addClip, removeClip, history, addHistory }),
+    [sport, setSport, video, restoring, setVideo, loadVideoFile, videoAnalysis, setVideoAnalysis, scan, scanError, startScan, cancelScan, labelPerson, analyzePerson, cams, clips, addClip, removeClip, history, addHistory],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
