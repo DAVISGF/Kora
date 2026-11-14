@@ -34,6 +34,11 @@ describe('informe descargable del Coach', () => {
     const md = coachReportMd(report, 'partido.mp4', 'Fútbol')
     expect(md).toContain('# Jugador 1')
     expect(md).toContain('# Jugador 2')
+    // Quien tiene etiqueta sale con su nombre; el resto conserva su número de orden.
+    const named = coachReportMd(report, 'partido.mp4', 'Fútbol', new Map([[9, '#10 L. Vidal']]))
+    expect(named).toContain('# Jugador 1')
+    expect(named).toContain('# #10 L. Vidal')
+    expect(named).not.toContain('# Jugador 2')
     expect(md).not.toMatch(/undefined|null|NaN|\[object/)
     // Ningún título de sección queda sin contenido debajo.
     expect(md).not.toMatch(/## [^\n]+\n+(## |# |$)/)

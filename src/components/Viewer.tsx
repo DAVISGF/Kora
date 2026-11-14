@@ -35,6 +35,9 @@ interface ViewerProps {
   onMeta: (meta: { secs: number; width: number; height: number }) => void
   /** Detecciones reales del fotograma actual, si el servicio de visión respondió */
   real: FrameAnalysis | null
+  /** Etiquetas de las personas seguidas y qué hacer al pulsar una; solo con detecciones del análisis guardado */
+  names?: Map<number, string>
+  onPick?: (id: number) => void
   videoSize: { width: number; height: number } | null
   /** Estado del servicio de visión, visible sobre el video */
   visionStatus: string
@@ -54,7 +57,7 @@ const AMP: [number, number][] = [
 ]
 const BASE_SPEED = [0.8, 1.2, 6.4, 4.1, 5.2, 3.0]
 
-export default function Viewer({ data, layers, tick, view, orbit, cams, timecode, video, videoRef, onMeta, real, videoSize, visionStatus, onVideoError, overlay }: ViewerProps) {
+export default function Viewer({ data, layers, tick, view, orbit, cams, timecode, video, videoRef, onMeta, real, names, onPick, videoSize, visionStatus, onVideoError, overlay }: ViewerProps) {
   const ph = tick * 0.3
   const is3d = view === '3d'
   const cam = CAMERAS.find((c) => c.id === view) ?? CAMERAS[0]
@@ -84,7 +87,7 @@ export default function Viewer({ data, layers, tick, view, orbit, cams, timecode
           />
         )}
         {!hasVideo && <Scene sport={data.id} accent={data.accent} layers={layers} offsets={offsets} labels={labels} />}
-        {hasVideo && real && videoSize && <RealOverlay analysis={real} layers={layers} width={videoSize.width} height={videoSize.height} />}
+        {hasVideo && real && videoSize && <RealOverlay analysis={real} layers={layers} width={videoSize.width} height={videoSize.height} names={names} onPick={onPick} />}
       </div>
 
       {is3d && (

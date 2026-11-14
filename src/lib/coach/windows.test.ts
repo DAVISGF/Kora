@@ -16,6 +16,17 @@ describe('qué mirar de cerca', () => {
     expect(tooSmall).toBe(1)
   })
 
+  it('si se elige a alguien a mano, se le mide aunque no sea protagonista', () => {
+    const tracks = buildTracks(frames(10, [{ id: 1, h: 0.6 }, { id: 2, h: 0.5 }, { id: 3, h: 0.08 }, { id: 4, h: 0.3, from: 4, to: 6 }]))
+    // El 4 queda fuera por su cuenta: se ve poco al lado del principal.
+    expect(pickProtagonists(tracks, undefined, [4]).chosen.map((t) => t.id)).toEqual([4])
+    // Elegir no arregla un cuerpo demasiado pequeño para medirlo: se avisa en vez de inventar.
+    const small = pickProtagonists(tracks, undefined, [3])
+    expect(small.chosen).toHaveLength(0)
+    expect(small.tooSmall).toBe(1)
+    expect(pickProtagonists(tracks, undefined, [99]).chosen).toHaveLength(0)
+  })
+
   it('un clip corto se mira entero a la mayor cadencia que permite el presupuesto', () => {
     const { chosen } = pickProtagonists(buildTracks(frames(8, [{ id: 1, h: 0.6 }])))
     const plan = planWindows(chosen, [], 'basket', { budget: 240, start: 0, end: 8.5 })

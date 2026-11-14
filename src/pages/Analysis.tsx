@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Download, Gauge, Pause, Play, Plus, ScanSearch, Scissors, Share2, SkipBack, SkipForward, Upload } from 'lucide-react'
 import { Biomech, Compare, Heatmap, ImageHeatmap, KpiGrid, PerfBars } from '../components/Charts'
 import { STATUS_COLOR } from '../components/CoachViews'
@@ -15,6 +15,7 @@ import { useStore, type Clip } from '../lib/store'
 import { SPEEDS, usePlayback } from '../lib/usePlayback'
 import { useVision, type VisionStatus } from '../lib/useVision'
 import { jointAngles, mainPerson, type FrameAnalysis } from '../lib/vision'
+import { isLabeled, personLabel, personTag } from '../lib/people'
 import { frameAt, MAX_FRAMES, SAMPLE_STEP, toGameEvents } from '../lib/videoAnalysis'
 import { comma, copyText, cx, downloadText, fmtClock, fmtShort, fmtTime, isVideoFile, slug } from '../lib/util'
 
@@ -39,7 +40,8 @@ export default function Analysis() {
 }
 
 function AnalysisView() {
-  const { data, sport, video, restoring, setVideo, loadVideoFile, cams, setCams, addClip, videoAnalysis, scan, scanError, startScan, cancelScan } = useStore()
+  const { data, sport, video, restoring, setVideo, loadVideoFile, cams, setCams, addClip, videoAnalysis, scan, scanError, startScan, cancelScan, labelPerson, analyzePerson } = useStore()
+  const navigate = useNavigate()
   const hasVideo = !!video?.playable
   const [params] = useSearchParams()
   const startSecs = Number(params.get('t'))
@@ -87,6 +89,10 @@ function AnalysisView() {
   // Análisis del video completo (KPIs, eventos y técnica): lo lleva el estado global, para que siga al cambiar de pantalla.
   const [personId, setPersonId] = useState<number | null>(null)
   const person = videoAnalysis?.people.find((p) => p.id === personId) ?? null
+  // Sobre el video, quien tiene nombre o dorsal lo lleva; el resto se queda con su número de seguimiento.
+  const people = videoAnalysis?.people
+  const tags = useMemo(() => new Map((people ?? []).filter(isLabeled).map((p) => [p.id, personTag(p)])), [people])
+  const withCard = useMemo(() => new Set((people ?? []).map((p) => p.id)), [people])
   const runScan = () => startScan({ startSec: secs > MAX_FRAMES * SAMPLE_STEP ? (secs * pos) / 100 : 0, ball: vision.ball })
   const scanLabel = scan ? `${scan.stage === 'tecnica' ? 'TÉCNICA' : 'VIDEO'} · ${scan.done}/${scan.total || '…'}` : ''
 
@@ -341,6 +347,15 @@ function AnalysisView() {
           coach={videoAnalysis?.coach?.people.find((p) => p.personId === person.id)}
           onSeek={(t) => seek((t / secs) * 100)}
           onClose={() => setPersonId(null)}
+          onLabel={(name, number) => labelPerson(person.id, name, number)}
+          onAnalyze={
+            hasVideo && !scan
+              ? () => {
+                  analyzePerson(person.id)
+                  navigate('/coach')
+                }
+              : undefined
+          }
         />
       )}
 
@@ -428,6 +443,8 @@ function AnalysisView() {
                   videoRef={pb.videoRef}
                   onMeta={setMeta}
                   real={shownAnalysis}
+                  names={!vision.analysis && stored ? tags : undefined}
+                  onPick={!vision.analysis && stored ? (id) => withCard.has(id) && setPersonId(id) : undefined}
                   videoSize={meta}
                   visionStatus={scan ? `ANALIZANDO ${scanLabel}` : !vision.analysis && stored ? `IA REAL · ${stored.persons.length} personas · guardado` : visionLabel(vision.status, vision.analysis)}
                   onVideoError={() => setPlayError(true)}
@@ -710,10 +727,16 @@ function AnalysisView() {
               <KpiGrid data={videoAnalysis} />
               {videoAnalysis.perf.length > 0 && (
                 <PerfBars
-                  data={{ perf: videoAnalysis.perf.map(([who, pct]) => [who, pct]), perfMetric: 'Distancia estimada' }}
+                  data={{
+                    perf: videoAnalysis.perf.map(([who, pct]) => {
+                      const p = videoAnalysis.people.find((x) => x.id === Number(who.slice(1)))
+                      return [p ? personLabel(p) : `Persona ${who}`, pct]
+                    }),
+                    perfMetric: 'Distancia estimada',
+                  }}
                   values={videoAnalysis.perf.map((r) => r[2])}
                   unit="m"
-                  who="Persona"
+                  who=""
                   onSelect={(i) => setPersonId(Number(videoAnalysis.perf[i][0].slice(1)))}
                 />
               )}

@@ -83,12 +83,16 @@ export interface Selection {
 /**
  * Las personas a las que se les mide la técnica: las que más se ven. Una
  * persona de fondo, con mucho menos protagonismo que la principal, se deja fuera.
+ *
+ * Con `only`, quien usa la app ya eligió a quién mirar: se analiza a esas personas
+ * aunque no sean las que más se ven, siempre que se vean lo bastante grandes.
  */
-export function pickProtagonists(tracks: Track[], max = MAX_PROTAGONISTS): Selection {
-  const present = tracks.filter((t) => t.samples.length >= MIN_SAMPLES)
+export function pickProtagonists(tracks: Track[], max = MAX_PROTAGONISTS, only?: number[]): Selection {
+  const present = tracks.filter((t) => t.samples.length >= MIN_SAMPLES && (!only || only.includes(t.id)))
   const big = present.filter((t) => t.height >= MIN_HEIGHT).sort((a, b) => b.score - a.score)
   const top = big[0]?.score ?? 0
-  return { chosen: big.filter((t) => t.score >= top * 0.3).slice(0, max), tooSmall: present.length - big.length }
+  const chosen = only ? big : big.filter((t) => t.score >= top * 0.3)
+  return { chosen: chosen.slice(0, max), tooSmall: present.length - big.length }
 }
 
 function merge(windows: Window[]): Window[] {

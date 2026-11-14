@@ -60,6 +60,9 @@ export const slug = (s: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
 
+/** Nombre para un archivo que sale de un video: sin su extensión, para que no acabe en «-mp4». */
+export const videoSlug = (name: string) => slug(name.replace(VIDEO_EXT, '')) || 'video'
+
 /** Generador pseudoaleatorio con semilla, para datos de ejemplo estables. */
 export function seeded(seed: number) {
   let s = seed

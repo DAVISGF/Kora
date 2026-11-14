@@ -48,6 +48,9 @@ export interface RealEvent {
 /** Todo lo medido de una persona a lo largo del tramo analizado. */
 export interface PersonStats {
   id: number
+  /** Nombre y dorsal que le puso quien usa la app; el seguimiento no los conoce */
+  name?: string
+  number?: string
   /** Recorte de la persona en su mejor fotograma, como data URL */
   thumb: string | null
   thumbT: number
@@ -91,6 +94,8 @@ export interface VideoAnalysis {
   coach: CoachReport | null
   /** Por qué no hay informe de técnica, si falló */
   coachError?: string
+  /** Personas elegidas a mano para el informe de técnica; sin esto, las que más se ven */
+  coachFocus?: number[]
 }
 
 /** Avance del análisis: primero el video completo, después la técnica de cada jugador. */
@@ -240,19 +245,52 @@ export async function runVideoAnalysis(
   // Técnica: se mide de cerca a los protagonistas. Si falla, el resto del análisis se conserva.
   if (!opts.signal.aborted) {
     try {
-      const coarse = { sport, start, end: Math.min(duration, analysis.end + COARSE_STEP), frames: analysis.frames, events: analysis.events }
-      analysis.coach = await runCoach(video, coarse, {
-        signal: opts.signal,
-        onProgress: (n, of) => opts.onProgress({ stage: 'tecnica', done: n, total: of }),
-      })
-      for (const p of analysis.coach.people) p.thumb = analysis.people.find((x) => x.id === p.personId)?.thumb ?? null
+      analysis.coach = await coachOf(video, analysis, opts)
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') analysis.coachError = e instanceof VisionError ? e.message : 'No se pudo medir la técnica en este video.'
+      if ((e as Error).name !== 'AbortError') analysis.coachError = coachFailure(e)
     }
   }
   dispose()
   if (opts.signal.aborted) throw new DOMException('Análisis cancelado', 'AbortError')
   return analysis
+}
+
+const coachFailure = (e: unknown) => (e instanceof VisionError ? e.message : 'No se pudo medir la técnica en este video.')
+
+type CoachRunOptions = { onProgress: (p: ScanProgress) => void; signal: AbortSignal }
+
+/** El informe de técnica a partir de la pasada general ya hecha; `only` limita a quién se mide. */
+async function coachOf(video: HTMLVideoElement, analysis: VideoAnalysis, opts: CoachRunOptions, only?: number[]): Promise<CoachReport> {
+  const coarse = { sport: analysis.sport, start: analysis.start, end: Math.min(video.duration, analysis.end + COARSE_STEP), frames: analysis.frames, events: analysis.events }
+  const report = await runCoach(video, coarse, {
+    signal: opts.signal,
+    onProgress: (n, of) => opts.onProgress({ stage: 'tecnica', done: n, total: of }),
+    only,
+  })
+  for (const p of report.people) p.thumb = analysis.people.find((x) => x.id === p.personId)?.thumb ?? null
+  return report
+}
+
+/**
+ * Vuelve a medir la técnica, esta vez de las personas elegidas a mano. Reutiliza la
+ * pasada general: el seguimiento no cambia, así que nombres y dorsales se conservan.
+ */
+export async function runCoachFor(url: string, analysis: VideoAnalysis, personIds: number[], opts: CoachRunOptions): Promise<VideoAnalysis> {
+  const video = await loadVideo(url)
+  try {
+    const next: VideoAnalysis = { ...analysis, coachFocus: personIds, coachError: undefined }
+    try {
+      next.coach = await coachOf(video, analysis, opts, personIds)
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e
+      next.coach = null
+      next.coachError = coachFailure(e)
+    }
+    if (opts.signal.aborted) throw new DOMException('Análisis cancelado', 'AbortError')
+    return next
+  } finally {
+    disposeVideo(video)
+  }
 }
 
 let cropCanvas: HTMLCanvasElement | null = null
