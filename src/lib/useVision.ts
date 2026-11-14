@@ -19,6 +19,8 @@ function storedEngine(): LiveEngine {
 
 const LIVE_INTERVAL_MS = 800
 const LOCAL_MIN_INTERVAL_MS = 50 // hasta ~20 detecciones por segundo
+/** Fallos seguidos del modelo local que se toleran antes de detener el análisis continuo. */
+const LOCAL_MAX_FAILURES = 3
 
 /** Análisis real de fotogramas del video cargado, bajo demanda o en continuo. */
 export function useVision(videoRef: RefObject<HTMLVideoElement | null>, enabled: boolean, pos: number) {
@@ -75,8 +77,9 @@ export function useVision(videoRef: RefObject<HTMLVideoElement | null>, enabled:
 
     const frame = () => new Promise<number>((r) => requestAnimationFrame(r))
     void (async () => {
-      try {
-        while (!stopped) {
+      let failures = 0
+      while (!stopped) {
+        try {
           const now = await frame()
           const video = videoRef.current
           if (stopped) break
@@ -97,13 +100,20 @@ export function useVision(videoRef: RefObject<HTMLVideoElement | null>, enabled:
           setAnalysis({ persons, ball: res.ball, ms: res.ms, model: `MediaPipe · ${res.delegate}`, source: 'local' })
           setStatus('ok')
           setMessage('')
+          failures = 0
+        } catch (e) {
+          if (stopped) return
+          console.error('Fallo del modelo local:', e)
+          // Un fallo suelto (un fotograma que no se pudo leer, la GPU ocupada) no detiene el análisis.
+          // Se olvida el fotograma para reintentarlo aunque el video esté en pausa.
+          lastTime = -1
+          if (++failures < LOCAL_MAX_FAILURES) continue
+          const detail = e instanceof Error && e.message ? ` Detalle: ${e.message.slice(0, 140)}` : ''
+          setStatus('failed')
+          setMessage(`No se pudo ejecutar el modelo del navegador. Prueba el modo continuo con Roboflow.${detail}`)
+          setLive(false)
+          return
         }
-      } catch (e) {
-        if (stopped) return
-        console.error('Fallo del modelo local:', e)
-        setStatus('failed')
-        setMessage('No se pudo ejecutar el modelo del navegador. Prueba el modo continuo con Roboflow.')
-        setLive(false)
       }
     })()
     return () => {
