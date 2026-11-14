@@ -174,11 +174,42 @@ async function run(req: WorkerRequest): Promise<Omit<Extract<WorkerResponse, { o
   return { persons, ball: ball ? { box: ball.box, conf: ball.conf } : null, ms: Math.round(performance.now() - started), delegate }
 }
 
+/** Suelta los modelos cargados para que la próxima detección los cree de nuevo. */
+async function reset() {
+  const loaded = await Promise.allSettled([posePromise, objectsPromise])
+  posePromise = null
+  objectsPromise = null
+  for (const task of loaded) {
+    try {
+      if (task.status === 'fulfilled') task.value?.close()
+    } catch {
+      /* un modelo que ya falló puede no dejarse cerrar */
+    }
+  }
+}
+
+/**
+ * Hay equipos en los que el modelo se crea bien con GPU pero falla al detectar
+ * (controladores, WebGL limitado dentro de un worker). Ahí no basta con el
+ * respaldo de la creación: se rehace todo en CPU y se repite el fotograma.
+ */
+async function runResilient(req: WorkerRequest) {
+  try {
+    return await run(req)
+  } catch (err) {
+    const wasGpu = delegate === 'GPU'
+    await reset()
+    if (!wasGpu) throw err
+    delegate = 'CPU'
+    return run(req)
+  }
+}
+
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   const req = e.data
   let res: WorkerResponse
   try {
-    res = { id: req.id, ok: true, ...(await run(req)) }
+    res = { id: req.id, ok: true, ...(await runResilient(req)) }
   } catch (err) {
     res = { id: req.id, ok: false, error: err instanceof Error ? err.message : String(err) }
   } finally {
