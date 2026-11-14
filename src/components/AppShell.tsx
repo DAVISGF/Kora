@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react'
 import { NavLink, Outlet, Link } from 'react-router-dom'
-import { History, ListVideo, MonitorPlay, Plus, Scissors, Sparkles, Upload } from 'lucide-react'
+import { History, LifeBuoy, ListVideo, MonitorPlay, Plus, Scissors, Sparkles, Upload } from 'lucide-react'
 import { SPORT_LIST } from '../data/sports'
+import KiloWidget from '../helpdesk/KiloWidget'
 import { useStore } from '../lib/store'
 import { cx } from '../lib/util'
 import { btnPrimary, SampleBadge, Segmented } from './ui'
@@ -13,6 +14,7 @@ const NAV = [
   { to: '/jugadas', label: 'Jugadas IA', icon: ListVideo },
   { to: '/historial', label: 'Historial', icon: History },
   { to: '/recortes', label: 'Recortes', icon: Scissors },
+  { to: '/soporte', label: 'Soporte', icon: LifeBuoy },
 ]
 
 export function Logo() {
@@ -84,6 +86,7 @@ export default function AppShell() {
           <Outlet />
         </div>
       </div>
+      <KiloWidget />
     </div>
   )
 }
