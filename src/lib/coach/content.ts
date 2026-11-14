@@ -363,8 +363,8 @@ export function missingText(reason: Missing, needs: CheckCopy['needs']): string 
 
 export const TIPS = {
   whole: 'Que se te vea el cuerpo entero, de la cabeza a los pies.',
-  side: 'Graba también de lado: así vemos el brazo, las rodillas y el cuerpo.',
-  front: 'Graba también de frente: así vemos los pies y el codo.',
+  side: 'Graba también de lado. Así vemos lo que ahora no se pudo ver.',
+  front: 'Graba también de frente. Así vemos lo que ahora no se pudo ver.',
   longer: 'Sigue grabando un segundo más después de cada tiro o golpeo.',
   more: 'Graba tres repeticiones o más del mismo gesto. Así estamos más seguros.',
   closer: 'Acerca la cámara. Debes ocupar al menos la mitad del alto de la pantalla.',

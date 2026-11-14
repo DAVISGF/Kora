@@ -7,7 +7,7 @@ import { countNoun, DISCLAIMER, NEXT_CHALLENGE } from '../lib/coach/content'
 import type { CoachReport, PersonCoach } from '../lib/coach/types'
 import { coachReportMd } from '../lib/report'
 import { useStore } from '../lib/store'
-import { cx, downloadText, fmtClock, slug } from '../lib/util'
+import { cx, downloadText, fmtClock, videoSlug } from '../lib/util'
 
 const ACTION_LABEL: Record<string, string> = { shot: 'Tiro', kick: 'Golpeo', run: 'Carrera' }
 
@@ -31,7 +31,7 @@ export default function Coach() {
             : 'El Coach mira tu video y te dice, con tus propias fotos, qué haces bien y qué mejorar primero.'}
         </PageHeader>
         {report && video && report.people.length > 0 && (
-          <button type="button" className={btnGhost} onClick={() => downloadText(`${slug(video.name)}-coach.md`, coachReportMd(report, video.name, data.label), 'text/markdown')}>
+          <button type="button" className={btnGhost} onClick={() => downloadText(`${videoSlug(video.name)}-coach.md`, coachReportMd(report, video.name, data.label), 'text/markdown')}>
             <Download size={16} aria-hidden="true" />
             Descargar informe
           </button>
